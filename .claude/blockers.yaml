@@ -1,0 +1,3 @@
+# Blockers file - agents write here when stuck
+# Human resolves by updating status to 'resolved' with resolution text
+blockers: []

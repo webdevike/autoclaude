@@ -1,0 +1,111 @@
+# Voice-Driven Development Assistant Tasks
+
+- name: Project Setup
+  description: Initialize monorepo structure with TypeScript, dependencies, and configuration
+  status: defined
+  spec: specs/project-setup.md
+  subtasks:
+    - name: Initialize workspace
+      description: Create pnpm workspace with server and web packages
+      status: defined
+      spec: specs/init-workspace.md
+
+    - name: Configure TypeScript
+      description: Set up shared TypeScript config for both packages
+      status: defined
+      spec: specs/typescript-config.md
+
+- name: Server Core
+  description: Build Node.js orchestrator server with WebSocket support
+  status: defined
+  spec: specs/server-core.md
+  subtasks:
+    - name: Express WebSocket server
+      description: Set up Express with ws library for client connections
+      status: defined
+      spec: specs/express-ws.md
+
+    - name: State machine
+      description: Implement conversation state management
+      status: defined
+      spec: specs/state-machine.md
+
+- name: OpenAI Realtime Integration
+  description: Integrate OpenAI Realtime API for voice interactions
+  status: defined
+  spec: specs/openai-realtime.md
+  subtasks:
+    - name: Voice controller
+      description: Manage WebSocket connection to OpenAI Realtime API
+      status: defined
+      spec: specs/voice-controller.md
+
+    - name: Function definitions
+      description: Define tools for Claude Code operations
+      status: defined
+      spec: specs/function-definitions.md
+
+    - name: Audio streaming
+      description: Handle audio input/output between browser and OpenAI
+      status: defined
+      spec: specs/audio-streaming.md
+
+- name: Claude Code Integration
+  description: Integrate Claude Agent SDK for development operations
+  status: defined
+  spec: specs/claude-integration.md
+  subtasks:
+    - name: Claude controller
+      description: Spawn and manage Claude Code via Agent SDK
+      status: defined
+      spec: specs/claude-controller.md
+
+    - name: Progress streaming
+      description: Stream Claude Code output to web UI
+      status: defined
+      spec: specs/progress-streaming.md
+
+    - name: Result summarization
+      description: Capture results for voice summary generation
+      status: defined
+      spec: specs/result-summarization.md
+
+- name: Web UI
+  description: Build React frontend for progress monitoring and input
+  status: defined
+  spec: specs/web-ui.md
+  subtasks:
+    - name: React app scaffold
+      description: Initialize Vite + React + TypeScript app
+      status: defined
+      spec: specs/react-scaffold.md
+
+    - name: Push-to-talk component
+      description: Spacebar-activated voice recording
+      status: defined
+      spec: specs/push-to-talk.md
+
+    - name: Progress display
+      description: Real-time streaming output display
+      status: defined
+      spec: specs/progress-display.md
+
+    - name: Text input fallback
+      description: Text input field for non-voice interaction
+      status: defined
+      spec: specs/text-input.md
+
+- name: End-to-End Integration
+  description: Wire all components together and test full workflow
+  status: defined
+  spec: specs/e2e-integration.md
+  subtasks:
+    - name: Full workflow test
+      description: Test complete voice → Claude Code → summary flow
+      status: defined
+      spec: specs/workflow-test.md
+
+    - name: Error handling
+      description: Handle failures gracefully with voice feedback
+      status: defined
+      spec: specs/error-handling.md

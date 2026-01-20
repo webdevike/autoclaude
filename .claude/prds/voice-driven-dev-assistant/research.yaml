@@ -1,0 +1,71 @@
+# Voice-Driven Development Assistant Research
+
+- text: "How to connect to OpenAI Realtime API with WebSocket in Node.js/TypeScript?"
+  mode: answer
+  answer: |
+    Use the official `openai` npm package with `OpenAIRealtimeWebSocket`:
+    ```typescript
+    import { OpenAIRealtimeWebSocket } from 'openai/beta/realtime/websocket';
+    const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-4o-realtime-preview-2024-12-17' });
+    rt.on('response.text.delta', (event) => process.stdout.write(event.delta));
+    ```
+    Or use raw WebSocket with proper headers for server-side apps.
+    Source: https://platform.openai.com/docs/guides/realtime-websocket
+
+- text: "How to implement function calling with OpenAI Realtime API?"
+  mode: answer
+  answer: |
+    1. Define tools in session.update
+    2. Listen for `response.output_item.done` events with type `function_call`
+    3. Execute the function and send result via `conversation.item.create` with type `function_call_output`
+    4. Call `response.create` to continue the conversation
+
+    Key: Function calls may execute simultaneously with audio - handle timing carefully.
+    Source: https://community.openai.com/t/using-real-time-api-tool-function-for-3rd-party-api-calls/983882
+
+- text: "How to use Claude Agent SDK programmatically in TypeScript?"
+  mode: answer
+  answer: |
+    Install `@anthropic-ai/claude-agent-sdk` and use the `query()` function:
+    ```typescript
+    import { query } from "@anthropic-ai/claude-agent-sdk";
+
+    for await (const message of query({
+      prompt: "Analyze this codebase",
+      options: {
+        maxTurns: 10,
+        allowedTools: ["Read", "Grep", "Edit", "Bash"]
+      }
+    })) {
+      if (message.type === "result") {
+        console.log(message.result);
+      }
+    }
+    ```
+    Use streaming mode for real-time progress updates.
+    Source: https://docs.anthropic.com/en/docs/claude-code/sdk/streaming-vs-single-mode
+
+- text: "How to handle audio input/output in browser for voice assistant?"
+  mode: answer
+  answer: |
+    For audio output, use `WavStreamPlayer` from OpenAI's realtime console:
+    - Handles PCM16 audio at 24kHz sample rate
+    - Supports queuing and interruption
+
+    For audio input with push-to-talk:
+    - Use MediaRecorder API or getUserMedia
+    - Send audio chunks while key is held
+    - Stop and flush on key release
+
+    Source: https://github.com/openai/openai-realtime-console
+
+- text: "Best practices for coordinating voice agent with background worker?"
+  mode: answer
+  answer: |
+    1. "Speak first, then act" pattern - announce action before executing
+    2. Stream progress updates to avoid silent waiting periods
+    3. Use ephemeral keys for browser clients, real keys on server only
+    4. Maintain clear state machine: conversation_mode vs execution_mode
+    5. Allow voice interruption ("stop", "what's happening?") during long tasks
+
+    Source: https://addyo.substack.com/p/speech-to-code-vibe-coding-with-voice
