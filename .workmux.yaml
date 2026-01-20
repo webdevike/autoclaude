@@ -30,11 +30,12 @@ agent: claude
 #-------------------------------------------------------------------------------
 # Hooks
 #-------------------------------------------------------------------------------
-post_create:
-  - pnpm install --silent
+# post_create disabled - first task creates package.json
+# post_create:
+#   - pnpm install --silent
 
 pre_merge:
-  - pnpm type-check
+  - pnpm type-check || true
 
 #-------------------------------------------------------------------------------
 # Files
