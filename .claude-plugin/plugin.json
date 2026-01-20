@@ -1,0 +1,10 @@
+{
+  "name": "autoclaude",
+  "description": "Autonomous PRD workflow system with validation, hooks, and QA pipeline for Node.js/TypeScript projects",
+  "version": "1.0.0",
+  "author": {
+    "name": "Ike"
+  },
+  "license": "MIT",
+  "keywords": ["prd", "workflow", "automation", "qa", "typescript", "validation", "claude", "autonomous"]
+}

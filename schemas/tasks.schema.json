@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tasks.schema.json",
+  "title": "PRD Tasks",
+  "description": "Schema for structured task tracking in tasks.yaml",
+  "type": "object",
+  "oneOf": [
+    {
+      "description": "Parent task containing subtasks for parallel work",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "A simple summary of the task"
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the task"
+        },
+        "subtasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#" }
+        }
+      },
+      "required": ["name", "description", "subtasks"],
+      "additionalProperties": false
+    },
+    {
+      "description": "Leaf task - an individual unit of work",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "A simple summary of the task"
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the task"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "defined", "in-progress", "completed", "blocked"],
+          "description": "Current status of the task"
+        },
+        "spec": {
+          "type": "string",
+          "description": "Path to the file that defines task parameters in detail"
+        },
+        "blockedReason": {
+          "type": "string",
+          "description": "Why the task is blocked (required if status is blocked)"
+        }
+      },
+      "required": ["name", "description", "status"],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "autoclaude",
+  "owner": {
+    "name": "Ike"
+  },
+  "plugins": [
+    {
+      "name": "autoclaude",
+      "source": ".",
+      "description": "Autonomous PRD workflow system with validation, hooks, and QA pipeline",
+      "version": "1.0.0"
+    }
+  ]
+}

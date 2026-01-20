@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; if [[ \"$filepath\" == *.ts ]]; then npx tsc --noEmit \"$filepath\" 2>&1 | head -20 || true; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; if [[ \"$filepath\" == *tasks.yaml ]]; then check-jsonschema --schemafile \"${CLAUDE_PLUGIN_ROOT}/schemas/tasks.schema.json\" \"$filepath\" 2>&1 || echo '{\"decision\": \"block\", \"reason\": \"tasks.yaml failed schema validation\"}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
