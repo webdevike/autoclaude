@@ -2,17 +2,17 @@
 
 - name: Project Setup
   description: Initialize monorepo structure with TypeScript, dependencies, and configuration
-  status: defined
+  status: complete
   spec: specs/project-setup.md
   subtasks:
     - name: Initialize workspace
       description: Create pnpm workspace with server and web packages
-      status: defined
+      status: complete
       spec: specs/init-workspace.md
 
     - name: Configure TypeScript
       description: Set up shared TypeScript config for both packages
-      status: defined
+      status: complete
       spec: specs/typescript-config.md
 
 - name: Server Core
