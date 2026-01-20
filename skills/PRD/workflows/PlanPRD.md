@@ -63,12 +63,38 @@ Maximum 25 questions. Focus on:
 - Integration approaches
 - Performance considerations
 
-#### Step 6: Execute Research
+#### Step 6: Execute Research with Exa
 
 For each unanswered question:
-- Use web search or code search tools
-- Document findings in research.yaml `answer` field
-- Include relevant citations
+
+**Use Exa web search for:**
+- API documentation and usage patterns
+- Library comparisons and recommendations
+- Best practices for specific implementations
+- Performance optimization techniques
+- Security considerations
+
+**Search query patterns:**
+- "[library] [specific use case] example"
+- "[framework] [pattern] best practices [year]"
+- "[technology] vs [technology] comparison"
+- "how to [specific task] in [language/framework]"
+
+**Document findings:**
+- Add `answer` field to each question in research.yaml
+- Include relevant code snippets if applicable
+- Add source URLs for reference
+
+Example:
+```yaml
+- text: "How does Stripe handle idempotency keys?"
+  mode: answer
+  answer: |
+    Stripe uses idempotency keys to prevent duplicate operations.
+    Pass `Idempotency-Key` header with a unique value (UUID recommended).
+    Keys expire after 24 hours. Same key + same request = cached response.
+    Source: https://stripe.com/docs/api/idempotent_requests
+```
 
 #### Step 7: Checkpoint - Research Impact
 
