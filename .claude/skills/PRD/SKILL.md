@@ -93,6 +93,7 @@ Run via bash to query PRD state:
 | `scripts/task-status.sh` | Get status of specific task |
 | `scripts/update-task-status.sh` | Update task status |
 | `scripts/research-status.sh` | Check research completion |
+| `scripts/execute-prd.sh` | **Start autonomous execution** |
 
 ## Requirements
 
