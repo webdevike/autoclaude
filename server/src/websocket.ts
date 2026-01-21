@@ -1,29 +1,34 @@
 import { WebSocket } from 'ws';
-import { StateMachine } from './state-machine.js';
+import { Orchestrator, type ClientMessage } from './orchestrator.js';
 
-export interface ClientMessage {
-  type: 'audio' | 'audio_commit' | 'text' | 'cancel';
-  data?: string; // base64 for audio, text for text
+let orchestrator: Orchestrator | null = null;
+
+/**
+ * Set the orchestrator instance for WebSocket handlers to use.
+ */
+export function setOrchestrator(orch: Orchestrator): void {
+  orchestrator = orch;
 }
 
-export interface ServerMessage {
-  type: 'audio' | 'transcript' | 'progress' | 'state' | 'error';
-  data: unknown;
-}
-
-const stateMachine = new StateMachine();
-
-stateMachine.on('transition', ({ from, to, context }) => {
-  console.log(`State transition: ${from} -> ${to}`);
-});
-
+/**
+ * Handle a new WebSocket connection.
+ */
 export function handleConnection(ws: WebSocket): void {
   console.log('Client connected');
+
+  if (!orchestrator) {
+    console.error('Orchestrator not initialized');
+    ws.close(1011, 'Server not ready');
+    return;
+  }
+
+  // Register client with orchestrator
+  orchestrator.registerClient(ws);
 
   ws.on('message', (data) => {
     try {
       const message: ClientMessage = JSON.parse(data.toString());
-      handleClientMessage(ws, message);
+      orchestrator!.handleClientMessage(ws, message);
     } catch (err) {
       sendError(ws, 'Invalid message format');
     }
@@ -31,59 +36,25 @@ export function handleConnection(ws: WebSocket): void {
 
   ws.on('close', () => {
     console.log('Client disconnected');
-    stateMachine.reset();
   });
 
   ws.on('error', (err) => {
     console.error('WebSocket error:', err);
   });
-
-  // Send initial state
-  send(ws, { type: 'state', data: { state: stateMachine.state } });
 }
 
-function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
-  switch (message.type) {
-    case 'audio':
-      // Forward to voice controller (to be implemented)
-      if (stateMachine.state === 'idle') {
-        stateMachine.transition('listening');
-        send(ws, { type: 'state', data: { state: 'listening' } });
-      }
-      break;
-    case 'audio_commit':
-      // Commit audio buffer and start processing
-      if (stateMachine.state === 'listening') {
-        stateMachine.transition('processing');
-        send(ws, { type: 'state', data: { state: 'processing' } });
-      }
-      break;
-    case 'text':
-      // Handle text input
-      if (stateMachine.state === 'idle') {
-        stateMachine.transition('listening', { currentPrompt: message.data });
-        stateMachine.transition('processing');
-        send(ws, { type: 'state', data: { state: 'processing' } });
-      }
-      break;
-    case 'cancel':
-      // Cancel current operation and reset to idle
-      stateMachine.reset();
-      send(ws, { type: 'state', data: { state: 'idle' } });
-      break;
-  }
-}
-
-export function send(ws: WebSocket, message: ServerMessage): void {
+/**
+ * Send error message to client.
+ */
+function sendError(ws: WebSocket, message: string): void {
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
+    ws.send(JSON.stringify({ type: 'error', data: { message } }));
   }
 }
 
-export function sendError(ws: WebSocket, error: string): void {
-  send(ws, { type: 'error', data: { message: error } });
-}
-
-export function getStateMachine(): StateMachine {
-  return stateMachine;
+/**
+ * Get the orchestrator instance.
+ */
+export function getOrchestrator(): Orchestrator | null {
+  return orchestrator;
 }
