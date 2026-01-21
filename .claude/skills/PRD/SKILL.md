@@ -39,6 +39,24 @@ Upon invocation:
 | create, new, start, draft | `workflows/CreatePRD.md` | Starting a feature from scratch |
 | plan, analyze, research, refine | `workflows/PlanPRD.md` | Existing PRD needs task breakdown |
 | work, implement, build, code, develop | `workflows/WorkPRD.md` | Executing defined tasks |
+| execute, autonomous, run | `workflows/ExecutePRD.md` | Autonomous execution with tracking |
+
+## Autonomous Execution
+
+For hands-off execution in a tmux session:
+
+```bash
+# Start autonomous execution with task tracking
+.claude/skills/PRD/scripts/execute-prd.sh <prd-name>
+
+# Monitor progress
+.claude/skills/PRD/scripts/task-status.sh <prd-name>
+```
+
+This ensures:
+- Task status updated to `in-progress` before each task
+- Validation runs before marking `completed`
+- Blocked tasks documented with reasons
 
 ## Decision Logic
 

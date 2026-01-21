@@ -37,6 +37,16 @@ agent: claude
 pre_merge:
   - pnpm type-check || true
 
+post_merge:
+  # Update PRD task status after successful merge
+  - |
+    if [[ -f .claude/.current-prd ]]; then
+      PRD_NAME=$(cat .claude/.current-prd)
+      TASK_NAME=$(git log -1 --pretty=%s | sed 's/Squashed commit.*//' | head -1)
+      BRANCH_NAME="${WORKMUX_BRANCH:-unknown}"
+      .claude/skills/PRD/scripts/update-task-status.sh "$PRD_NAME" "$BRANCH_NAME" completed 2>/dev/null || true
+    fi
+
 #-------------------------------------------------------------------------------
 # Files
 #-------------------------------------------------------------------------------
