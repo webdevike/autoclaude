@@ -36,12 +36,24 @@ Execute a PRD autonomously with proper task tracking.
    pnpm type-check 2>&1 || npm run type-check 2>&1 || tsc --noEmit 2>&1 || echo "No type-check configured"
    ```
 
-   **e) Mark as completed (if validation passes):**
+   **e) For frontend/UI tasks, also validate with Agent Browser:**
+   - If the task involves UI components, visual changes, or frontend features
+   - Ensure dev server is running (e.g., `pnpm dev`)
+   - Use Agent Browser to verify:
+     - Components render correctly
+     - No console errors
+     - Visual acceptance criteria met
+   ```bash
+   # Example: Check for console errors on a page
+   agent-browser --url http://localhost:3000 --check-console
+   ```
+
+   **f) Mark as completed (if validation passes):**
    ```bash
    .claude/skills/PRD/scripts/update-task-status.sh <prd-name> "<task-name>" completed
    ```
 
-   **f) Or mark as blocked (if stuck):**
+   **g) Or mark as blocked (if stuck):**
    ```bash
    .claude/skills/PRD/scripts/update-task-status.sh <prd-name> "<task-name>" blocked "reason"
    ```

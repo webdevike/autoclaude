@@ -190,14 +190,56 @@ pnpm lint         # Linting (if configured)
 pnpm test         # Tests (if configured)
 ```
 
-### QA Pipeline (Optional)
+### Frontend Validation with Agent Browser
 
-Full validation with browser checks:
+**For UI/frontend tasks**, Claude uses [Agent Browser](https://github.com/anthropics/agent-browser) to:
+- Open the app in a real browser
+- Take screenshots to verify UI changes
+- Check for console errors
+- Validate that components render correctly
+
 ```bash
+# Install Agent Browser globally
+npm install -g agent-browser
+
+# Claude will automatically use it for frontend verification
+# Make sure your dev server is running:
+pnpm dev  # or npm run dev
+```
+
+**In your task specs**, include visual acceptance criteria:
+```markdown
+## Acceptance Criteria
+- [ ] Button renders with correct styling
+- [ ] Click triggers expected action
+- [ ] No console errors
+- [ ] Responsive on mobile viewport
+```
+
+Claude will use Agent Browser to verify these before marking the task complete.
+
+### QA Pipeline (Full Validation)
+
+For comprehensive checks including browser validation:
+```bash
+# Start your dev server first
+pnpm dev &
+
+# Run full QA pipeline
 FRONTEND_URL=http://localhost:3000 ./scripts/qa-pipeline.sh /path/to/project
 ```
 
-Checks: types, lint, build, tests, frontend response, console errors, secrets scan, dependency audit.
+**QA Pipeline checks:**
+| Check | Tool | What it validates |
+|-------|------|-------------------|
+| Types | `tsc --noEmit` | TypeScript compilation |
+| Lint | ESLint | Code style issues |
+| Build | `npm run build` | Production build works |
+| Tests | `npm test` | Unit/integration tests |
+| Frontend | curl | Server responds with HTML |
+| Console | **Agent Browser** | No browser console errors |
+| Secrets | grep patterns | No hardcoded credentials |
+| Deps | `npm audit` | No vulnerable dependencies |
 
 ---
 
@@ -296,6 +338,7 @@ tmux attach -t prd-my-feature
 - pnpm (or npm)
 - tmux (for `/prd-spawn`)
 - Exa API key (for research)
+- **Agent Browser** (for frontend validation): `npm install -g agent-browser`
 
 ---
 
