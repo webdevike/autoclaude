@@ -1,205 +1,303 @@
 # autoclaude
 
-Autonomous PRD workflow system for Claude Code. A structured approach to building features from Product Requirement Documents with built-in validation and QA.
+Autonomous PRD workflow system for Claude Code. Build entire features hands-off with automatic task tracking, validation, and progress monitoring.
 
-## Installation
+## Quick Start - Fully Autonomous
 
-### From GitHub
+### 1. Create a PRD (Interactive)
 ```bash
-/plugin marketplace add ike/autoclaude
+# In Claude Code
+/prd-create my-feature
 ```
+Answer questions about what you want to build. Claude will research best practices and create the PRD.
 
-### Local Testing
+### 2. Plan the PRD (Interactive)
 ```bash
-claude --plugin-dir ./autoclaude
+/prd-plan my-feature
+```
+Claude analyzes the codebase, generates tasks with specs, and asks clarifying questions.
+
+### 3. Execute Autonomously (Hands-Off)
+```bash
+# Option A: Run in current session
+/prd-execute my-feature
+
+# Option B: Spawn in background tmux (recommended for long tasks)
+/prd-spawn my-feature
 ```
 
-## Skills
+### 4. Monitor Progress
+```bash
+# Check status anytime
+/prd-status my-feature
 
-### PRD Skill (`/prd`)
-
-The main skill with three workflows for the complete PRD lifecycle:
-
-| Trigger | Workflow | Description |
-|---------|----------|-------------|
-| "create prd", "new prd", "start prd" | CreatePRD | Gather requirements, create PRD.md |
-| "plan prd", "break down", "create tasks" | PlanPRD | Analyze PRD, research, create tasks.yaml |
-| "work on", "implement", "build" | WorkPRD | Execute tasks with validation |
-
-## Structure
-
-```
-autoclaude/
-├── .claude-plugin/
-│   ├── plugin.json          # Plugin manifest
-│   └── marketplace.json     # Marketplace metadata
-├── skills/
-│   └── PRD/
-│       ├── SKILL.md         # Main skill with routing
-│       ├── workflows/
-│       │   ├── CreatePRD.md # Information gathering workflow
-│       │   ├── PlanPRD.md   # Analysis & planning workflow
-│       │   └── WorkPRD.md   # Implementation workflow
-│       ├── reference/
-│       │   ├── prd-spec.md  # PRD file format reference
-│       │   └── task-spec.md # Task specification template
-│       ├── schemas/
-│       │   ├── tasks.schema.json    # JSON Schema for tasks.yaml
-│       │   └── research.schema.json # JSON Schema for research.yaml
-│       └── scripts/
-│           ├── list-prds.sh         # List all PRDs with status
-│           ├── list-defined-tasks.sh # Tasks ready to implement
-│           ├── list-draft-tasks.sh   # Tasks needing specs
-│           ├── task-status.sh        # Get specific task status
-│           ├── update-task-status.sh # Update task status
-│           └── research-status.sh    # Check research completion
-├── scripts/
-│   └── qa-pipeline.sh       # Comprehensive QA validation
-└── hooks/
-    └── hooks.json           # PostToolUse validation hooks
+# Or from terminal
+.claude/skills/PRD/scripts/task-status.sh my-feature
 ```
 
-## Workflows
+---
 
-### 1. CreatePRD - Requirements Gathering
+## Slash Commands
 
-Triggered by: "create prd", "new prd", "start prd", "new feature"
+| Command | Description | Mode |
+|---------|-------------|------|
+| `/prd-create <name>` | Create new PRD through Q&A | Interactive |
+| `/prd-plan <name>` | Generate tasks and specs | Interactive |
+| `/prd-execute <name>` | Execute all tasks with tracking | **Autonomous** |
+| `/prd-spawn <name>` | Execute in background tmux | **Autonomous** |
+| `/prd-status [name]` | Check task completion status | Query |
+| `/prd-watch <name>` | Live-watch execution progress | Query |
+| `/prd-sync <name>` | Sync task status with actual code | Repair |
 
-Creates the foundation:
-- `.claude/prds/<name>/PRD.md` - Requirements document
-- Gathers: goals, users, features, constraints, success metrics
+---
 
-### 2. PlanPRD - Analysis & Task Creation
+## Autonomous Execution Details
 
-Triggered by: "plan prd", "break down", "create tasks", "analyze prd"
+### What `/prd-execute` Does
 
-12-step process:
-1. Parse PRD sections
-2. Identify research questions
-3. Conduct research (web search, codebase analysis)
-4. Record findings in `research.yaml`
-5. Identify task boundaries
-6. Create task hierarchy
-7. Define dependencies
-8. Sequence by dependencies
-9. Write task specs
-10. Generate `tasks.yaml`
-11. Validate with schemas
-12. Present summary for approval
+For **each task** with `status: defined`:
 
-### 3. WorkPRD - Implementation
+1. **Marks task `in-progress`** in tasks.yaml
+2. **Reads the full spec** from `specs/<task-name>.md`
+3. **Implements** following acceptance criteria exactly
+4. **Validates** with `pnpm type-check` (or equivalent)
+5. **Marks task `completed`** (or `blocked` with reason)
+6. **Continues** to next task until all done
 
-Triggered by: "work on", "implement", "build", "execute"
+### What `/prd-spawn` Does
 
-Per-task cycle:
-1. Select next `defined` task
-2. Read task spec
-3. Implement following acceptance criteria
-4. Run QA pipeline (types, lint, tests, build, browser)
-5. Mark `completed` or `blocked`
-6. Repeat
+Same as `/prd-execute` but:
+- Runs in a **detached tmux session**
+- You can close your terminal and it keeps running
+- Attach anytime with `tmux attach -t prd-<name>`
 
-## Project Structure (Your Project)
+### Running in tmux Manually
+
+```bash
+# Create tmux session
+tmux new-session -s my-feature
+
+# Run autonomous execution
+.claude/skills/PRD/scripts/execute-prd.sh my-feature
+
+# Detach: Ctrl+b then d
+# Reattach: tmux attach -t my-feature
+```
+
+---
+
+## Full Workflow Example
+
+```bash
+# Step 1: Start Claude Code in your project
+cd my-project
+claude
+
+# Step 2: Create PRD
+> /prd-create user-authentication
+
+# (Claude asks questions, you answer)
+# (Claude researches with Exa, creates PRD.md)
+
+# Step 3: Plan implementation
+> /prd-plan user-authentication
+
+# (Claude explores codebase, generates tasks.yaml + specs/)
+
+# Step 4: Review the plan
+> cat .claude/prds/user-authentication/tasks.yaml
+
+# Step 5: Execute autonomously
+> /prd-spawn user-authentication
+
+# (Claude works in background)
+
+# Step 6: Check progress periodically
+> /prd-status user-authentication
+
+# Output:
+# Task                    Status
+# ----------------------  ---------
+# Project Setup           complete
+# Database Schema         complete
+# Auth Controller         in-progress
+# Frontend Components     defined
+# ...
+```
+
+---
+
+## Task Status Tracking
+
+The system **automatically tracks** task status in `tasks.yaml`:
+
+| Status | Meaning |
+|--------|---------|
+| `draft` | Needs specification |
+| `defined` | Has spec, ready to implement |
+| `in-progress` | Currently being worked on |
+| `completed` | Done and validated |
+| `blocked` | Cannot proceed (see `blockedReason`) |
+
+### Status Update Commands
+
+```bash
+# Update manually if needed
+.claude/skills/PRD/scripts/update-task-status.sh <prd> "<task>" completed
+.claude/skills/PRD/scripts/update-task-status.sh <prd> "<task>" blocked "reason"
+
+# Sync status with actual code state
+/prd-sync my-feature
+```
+
+---
+
+## Project Structure
+
+After running the workflow, your project will have:
 
 ```
 your-project/
 ├── .claude/
-│   └── prds/
-│       └── your-prd/
-│           ├── PRD.md           # Requirements document
-│           ├── tasks.yaml       # Task list with statuses
-│           ├── research.yaml    # Research questions & answers
-│           └── specs/           # Detailed specs per task
-│               └── task-name.md
-├── tsconfig.json
-├── .eslintrc.cjs
-├── package.json
-└── package-lock.json
+│   ├── commands/              # Slash commands (if local)
+│   │   ├── prd-create.md
+│   │   ├── prd-execute.md
+│   │   └── ...
+│   ├── prds/
+│   │   └── my-feature/
+│   │       ├── PRD.md         # Requirements document
+│   │       ├── tasks.yaml     # Task list with statuses
+│   │       ├── research.yaml  # Research Q&A
+│   │       └── specs/         # Per-task specifications
+│   │           ├── setup.md
+│   │           ├── auth.md
+│   │           └── ...
+│   └── skills/
+│       └── PRD/               # The PRD skill
+└── (your code)
 ```
 
-## Task Statuses
+---
 
-| Status | Meaning |
-|--------|---------|
-| `draft` | Initial definition, needs spec |
-| `defined` | Has spec, ready to implement |
-| `in-progress` | Currently being worked on |
-| `completed` | Done and validated |
-| `blocked` | Cannot proceed (has `blockedReason`) |
+## Validation & QA
 
-## QA Pipeline
+### Automatic Validation
 
-The `scripts/qa-pipeline.sh` runs 9 validation checks:
-
-1. **Types** - `tsc --noEmit`
-2. **Lint** - ESLint with auto-fix option
-3. **Build** - `npm run build`
-4. **Tests** - `npm test`
-5. **Frontend** - Verifies HTML response
-6. **Console** - Browser console errors via agent-browser
-7. **Secrets** - Scans for hardcoded credentials
-8. **Deps** - `npm audit` for vulnerabilities
-9. **Review** - Lists uncommitted changes
-
+Before marking any task complete, Claude runs:
 ```bash
-# Full pipeline
+pnpm type-check   # TypeScript validation
+pnpm lint         # Linting (if configured)
+pnpm test         # Tests (if configured)
+```
+
+### QA Pipeline (Optional)
+
+Full validation with browser checks:
+```bash
 FRONTEND_URL=http://localhost:3000 ./scripts/qa-pipeline.sh /path/to/project
-
-# With auto-fix
-./scripts/qa-pipeline.sh --fix /path/to/project
 ```
 
-## Automatic Hooks
+Checks: types, lint, build, tests, frontend response, console errors, secrets scan, dependency audit.
 
-Real-time validation on every file edit:
-
-- **TypeScript files** - `tsc --noEmit` runs automatically
-- **tasks.yaml** - Schema validation ensures valid structure
-
-## Helper Scripts
-
-Available in `skills/PRD/scripts/`:
-
-```bash
-# List all PRDs
-./list-prds.sh
-
-# Check tasks ready to implement
-./list-defined-tasks.sh <prd-name>
-
-# Check tasks needing specs
-./list-draft-tasks.sh <prd-name>
-
-# Get task status
-./task-status.sh <prd-name> <task-name>
-
-# Update task status
-./update-task-status.sh <prd-name> <task-name> <status> [reason]
-
-# Check research progress
-./research-status.sh <prd-name>
-```
+---
 
 ## Autonomy Rules
 
-**Agent Decides:**
-- Code style, naming, formatting
-- Library choices (if multiple work)
-- Implementation details not in spec
+### Agent Decides Autonomously
+- Implementation details within spec
+- Code style and formatting
+- Library choices (when multiple valid options)
 - Error handling patterns
+- File organization
 
-**Agent Blocks (writes to blockedReason):**
-- Ambiguous business logic
-- Breaking changes required
+### Agent Blocks (Asks for Help)
+- Ambiguous business requirements
+- Breaking changes to existing APIs
 - Missing critical information
-- Architectural decisions affecting multiple tasks
+- Security-sensitive decisions
+
+When blocked, the task is marked `blocked` with a reason, and Claude continues to the next task.
+
+---
+
+## Installation
+
+### Option 1: Copy to Your Project
+```bash
+# Copy the .claude directory to your project
+cp -r autoclaude/.claude your-project/.claude
+```
+
+### Option 2: Global Commands
+```bash
+# Copy commands to global Claude config
+cp autoclaude/.claude/commands/* ~/.claude/commands/
+```
+
+### Option 3: Plugin (Coming Soon)
+```bash
+/plugin marketplace add webdevike/autoclaude
+```
+
+---
+
+## Configuration
+
+### For Parallel Execution (Workmux)
+
+If using workmux for parallel task execution, add to `.workmux.yaml`:
+
+```yaml
+post_merge:
+  - |
+    if [[ -f .claude/.current-prd ]]; then
+      PRD_NAME=$(cat .claude/.current-prd)
+      BRANCH_NAME="${WORKMUX_BRANCH:-unknown}"
+      .claude/skills/PRD/scripts/update-task-status.sh "$PRD_NAME" "$BRANCH_NAME" completed
+    fi
+```
+
+### Environment Variables
+
+```bash
+# Required for Exa research
+export EXA_API_KEY=your-key
+
+# Required for Claude
+export ANTHROPIC_API_KEY=your-key
+```
+
+---
+
+## Troubleshooting
+
+### Task status not updating?
+```bash
+/prd-sync my-feature
+```
+
+### Want to restart a task?
+```bash
+.claude/skills/PRD/scripts/update-task-status.sh my-feature "task-name" defined
+```
+
+### Execution stuck?
+Check the tmux session:
+```bash
+tmux attach -t prd-my-feature
+```
+
+---
 
 ## Requirements
 
+- Claude Code CLI
 - Node.js 18+
-- npm
-- `check-jsonschema`: `pip install check-jsonschema`
-- `agent-browser`: `npm install -g agent-browser`
+- pnpm (or npm)
+- tmux (for `/prd-spawn`)
+- Exa API key (for research)
+
+---
 
 ## License
 
