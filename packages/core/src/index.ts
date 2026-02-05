@@ -13,5 +13,6 @@ export type {
   ModelConfig,
   ModelTier,
   StatusUpdate,
+  StreamProgressEvent,
   ToolDefinition,
 } from "./types.js";
