@@ -44,8 +44,8 @@ export default function notionExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!notion) {
         return {
-          type: "text",
-          text: "Notion not initialized. Check NOTION_API_KEY environment variable.",
+          content: [{ type: "text", text: "Notion not initialized. Check NOTION_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -57,8 +57,8 @@ export default function notionExtension(pi: ExtensionAPI) {
 
         if (results.results.length === 0) {
           return {
-            type: "text",
-            text: "No results found.",
+            content: [{ type: "text", text: "No results found." }],
+            details: {},
           };
         }
 
@@ -71,13 +71,13 @@ export default function notionExtension(pi: ExtensionAPI) {
         }));
 
         return {
-          type: "text",
-          text: JSON.stringify(formatted, null, 2),
+          content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error searching: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error searching: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -96,8 +96,8 @@ export default function notionExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!notion) {
         return {
-          type: "text",
-          text: "Notion not initialized. Check NOTION_API_KEY environment variable.",
+          content: [{ type: "text", text: "Notion not initialized. Check NOTION_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -115,13 +115,13 @@ export default function notionExtension(pi: ExtensionAPI) {
         }));
 
         return {
-          type: "text",
-          text: JSON.stringify(formatted, null, 2),
+          content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error reading page: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error reading page: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -148,8 +148,8 @@ export default function notionExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!notion) {
         return {
-          type: "text",
-          text: "Notion not initialized. Check NOTION_API_KEY environment variable.",
+          content: [{ type: "text", text: "Notion not initialized. Check NOTION_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -175,13 +175,13 @@ export default function notionExtension(pi: ExtensionAPI) {
         });
 
         return {
-          type: "text",
-          text: `Created page: ${page.id}`,
+          content: [{ type: "text", text: `Created page: ${page.id}` }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error creating page: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error creating page: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },

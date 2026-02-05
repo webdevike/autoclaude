@@ -55,8 +55,8 @@ export default function gmailExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!gmail) {
         return {
-          type: "text",
-          text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables.",
+          content: [{ type: "text", text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables." }],
+          details: {},
         };
       }
 
@@ -70,8 +70,8 @@ export default function gmailExtension(pi: ExtensionAPI) {
         const messages = res.data.messages ?? [];
         if (messages.length === 0) {
           return {
-            type: "text",
-            text: "No messages found.",
+            content: [{ type: "text", text: "No messages found." }],
+            details: {},
           };
         }
 
@@ -95,13 +95,13 @@ export default function gmailExtension(pi: ExtensionAPI) {
         );
 
         return {
-          type: "text",
-          text: JSON.stringify(summaries, null, 2),
+          content: [{ type: "text", text: JSON.stringify(summaries, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error listing messages: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error listing messages: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -120,8 +120,8 @@ export default function gmailExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!gmail) {
         return {
-          type: "text",
-          text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables.",
+          content: [{ type: "text", text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables." }],
+          details: {},
         };
       }
 
@@ -144,13 +144,13 @@ export default function gmailExtension(pi: ExtensionAPI) {
         };
 
         return {
-          type: "text",
-          text: JSON.stringify(result, null, 2),
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error reading message: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error reading message: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -175,8 +175,8 @@ export default function gmailExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!gmail) {
         return {
-          type: "text",
-          text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables.",
+          content: [{ type: "text", text: "Gmail not initialized. Check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN environment variables." }],
+          details: {},
         };
       }
 
@@ -201,13 +201,13 @@ export default function gmailExtension(pi: ExtensionAPI) {
         });
 
         return {
-          type: "text",
-          text: `Email sent to ${params.to}`,
+          content: [{ type: "text", text: `Email sent to ${params.to}` }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error sending email: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error sending email: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },

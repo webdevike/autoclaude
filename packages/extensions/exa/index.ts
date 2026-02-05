@@ -5,7 +5,7 @@
  * Initializes from EXA_API_KEY environment variable on session_start.
  */
 
-import Exa from "exa-js";
+import { Exa } from "exa-js";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
@@ -54,8 +54,8 @@ export default function exaExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!exa) {
         return {
-          type: "text",
-          text: "Exa not initialized. Check EXA_API_KEY environment variable.",
+          content: [{ type: "text", text: "Exa not initialized. Check EXA_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -71,8 +71,8 @@ export default function exaExtension(pi: ExtensionAPI) {
 
         if (!searchResponse.results || searchResponse.results.length === 0) {
           return {
-            type: "text",
-            text: "No results found.",
+            content: [{ type: "text", text: "No results found." }],
+            details: {},
           };
         }
 
@@ -85,13 +85,13 @@ export default function exaExtension(pi: ExtensionAPI) {
         }));
 
         return {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error searching: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error searching: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },

@@ -44,8 +44,8 @@ export default function linearExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!linear) {
         return {
-          type: "text",
-          text: "Linear not initialized. Check LINEAR_API_KEY environment variable.",
+          content: [{ type: "text", text: "Linear not initialized. Check LINEAR_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -55,8 +55,8 @@ export default function linearExtension(pi: ExtensionAPI) {
 
         if (nodes.length === 0) {
           return {
-            type: "text",
-            text: "No issues found.",
+            content: [{ type: "text", text: "No issues found." }],
+            details: {},
           };
         }
 
@@ -70,13 +70,13 @@ export default function linearExtension(pi: ExtensionAPI) {
         );
 
         return {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error searching issues: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error searching issues: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -108,8 +108,8 @@ export default function linearExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!linear) {
         return {
-          type: "text",
-          text: "Linear not initialized. Check LINEAR_API_KEY environment variable.",
+          content: [{ type: "text", text: "Linear not initialized. Check LINEAR_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -123,13 +123,13 @@ export default function linearExtension(pi: ExtensionAPI) {
 
         const created = await issue.issue;
         return {
-          type: "text",
-          text: `Created: ${created?.identifier} — ${created?.title}`,
+          content: [{ type: "text", text: `Created: ${created?.identifier} — ${created?.title}` }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error creating issue: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error creating issue: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -144,8 +144,8 @@ export default function linearExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!linear) {
         return {
-          type: "text",
-          text: "Linear not initialized. Check LINEAR_API_KEY environment variable.",
+          content: [{ type: "text", text: "Linear not initialized. Check LINEAR_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -158,13 +158,13 @@ export default function linearExtension(pi: ExtensionAPI) {
         }));
 
         return {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error listing teams: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error listing teams: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
@@ -179,8 +179,8 @@ export default function linearExtension(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
       if (!linear) {
         return {
-          type: "text",
-          text: "Linear not initialized. Check LINEAR_API_KEY environment variable.",
+          content: [{ type: "text", text: "Linear not initialized. Check LINEAR_API_KEY environment variable." }],
+          details: {},
         };
       }
 
@@ -195,13 +195,13 @@ export default function linearExtension(pi: ExtensionAPI) {
         }));
 
         return {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+          details: {},
         };
       } catch (error) {
         return {
-          type: "text",
-          text: `Error listing my issues: ${error instanceof Error ? error.message : "Unknown error"}`,
+          content: [{ type: "text", text: `Error listing my issues: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
         };
       }
     },
