@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-02-05)
 ## Current Position
 
 Phase: 2 of 4 (Integrations)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-05 — Completed 02-01-PLAN.md (Core Coding Tools)
+Last activity: 2026-02-05 — Completed 02-02-PLAN.md (Extension-based Integrations)
 
-Progress: [████░░░░░░] 40%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 2.8 minutes
-- Total execution time: 0.18 hours
+- Total execution time: 0.23 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 3/3 | 10 min | 3.3 min |
-| 02-integrations | 1/3 | 1 min | 1.0 min |
+| 02-integrations | 2/3 | 4 min | 2.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (6 min), 01-03 (1 min), 02-01 (1 min)
-- Trend: Accelerating (mostly pre-implemented work)
+- Last 5 plans: 01-03 (1 min), 02-01 (1 min), 02-02 (3 min)
+- Trend: Steady (bug fixes adding small overhead)
 
 *Updated after each plan completion*
 
@@ -71,19 +71,21 @@ Recent decisions affecting current work:
 - Edit tool safety: Require unique match by default, use replace_all flag for intentional multi-replacement
 - Context-aware tools: Tools accept cwd parameter for proper path resolution in different modes
 
+**From Plan 02-02:**
+- Extension API for integrations: Use pi-coding-agent Extension format for all integrations (lifecycle management, hot-reload potential)
+- AgentToolResult format: Tool results must have content array + details object (pi-agent-core requirement)
+- Environment-based initialization: Extensions initialize from environment variables (simpler than config files)
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-**Extensions package type errors** (Low priority, pre-existing):
-- All extension tools (exa, gmail, linear, notion) have wrong return format
-- Missing `content` and `details` fields in AgentToolResult
-- Should be fixed in 02-02 or 02-03 when integrating those tools
+None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-05 22:24 UTC
-Stopped at: Completed 02-01-PLAN.md (Core Coding Tools)
+Last session: 2026-02-05 22:27 UTC
+Stopped at: Completed 02-02-PLAN.md (Extension-based Integrations)
 Resume file: None
