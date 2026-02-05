@@ -1,5 +1,12 @@
 export { AgentOrchestrator } from "./agent.js";
 export { createModel, completeLLM, streamLLM, parseModel } from "./llm.js";
+export {
+  createPiSession,
+  createAuthStorage,
+  promptWithStreaming,
+  promptSimple,
+  parseModelString,
+} from "./pi-session.js";
 export type {
   AgentResponse,
   AgentSession,

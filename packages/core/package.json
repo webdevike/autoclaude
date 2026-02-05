@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.52.0",
-    "@mariozechner/pi-ai": "^0.51.6",
-    "@sinclair/typebox": "^0.34.48"
+    "@mariozechner/pi-ai": "^0.52.2",
+    "@mariozechner/pi-coding-agent": "^0.52.3",
+    "@sinclair/typebox": "^0.34.48",
+    "openai": "^6.18.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

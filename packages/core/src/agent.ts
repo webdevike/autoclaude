@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
-import type { Model, Context, Api, Tool } from "@mariozechner/pi-ai";
-import { createModel, completeLLM, streamLLM } from "./llm.js";
+import type { AgentSession as PiAgentSession } from "@mariozechner/pi-coding-agent";
+import {
+  createPiSession,
+  createAuthStorage,
+  promptWithStreaming,
+  promptSimple,
+  parseModelString,
+} from "./pi-session.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -14,7 +18,6 @@ import type {
   ModelTier,
   StatusUpdate,
   ToolDefinition,
-  ToolDefinitionPiAi,
   SessionEntry,
   StreamProgressEvent,
 } from "./types.js";
@@ -43,16 +46,35 @@ When handling yourself, just respond normally.`;
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   "claude-3-5-sonnet-20241022": { input: 3.0, output: 15.0 },
   "claude-3-5-haiku-20241022": { input: 0.8, output: 4.0 },
+  "claude-sonnet-4": { input: 3.0, output: 15.0 },
+  "claude-3.5-haiku": { input: 0.8, output: 4.0 },
   "gpt-4o": { input: 2.5, output: 10.0 },
   "gpt-4o-mini": { input: 0.15, output: 0.6 },
   "anthropic/claude-3.5-sonnet": { input: 3.0, output: 15.0 },
   "anthropic/claude-3.5-haiku": { input: 0.8, output: 4.0 },
+  "anthropic/claude-sonnet-4": { input: 3.0, output: 15.0 },
   "openai/gpt-4o": { input: 2.5, output: 10.0 },
   "openai/gpt-4o-mini": { input: 0.15, output: 0.6 },
 };
 
 function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const costs = MODEL_COSTS[model] || { input: 0, output: 0 };
+  // Try exact match first
+  let costs = MODEL_COSTS[model];
+
+  // Try partial match on model name
+  if (!costs) {
+    for (const [key, value] of Object.entries(MODEL_COSTS)) {
+      if (model.includes(key) || key.includes(model)) {
+        costs = value;
+        break;
+      }
+    }
+  }
+
+  if (!costs) {
+    costs = { input: 0, output: 0 };
+  }
+
   return (costs.input * inputTokens / 1_000_000) + (costs.output * outputTokens / 1_000_000);
 }
 
@@ -150,6 +172,9 @@ export class AgentOrchestrator {
   private onStatusUpdate?: (update: StatusUpdate) => void;
   private sessionManagers: Map<string, SessionManager> = new Map();
 
+  // Pi session components (shared across all calls)
+  private authStorage = createAuthStorage();
+
   setStatusHandler(handler: (update: StatusUpdate) => void): void {
     this.onStatusUpdate = handler;
   }
@@ -229,75 +254,85 @@ export class AgentOrchestrator {
       content: msg.text,
     });
 
-    // Load conversation history for context-aware triage
+    // Load conversation history for context
     const history = sessionManager.loadSession(50);
-    const contextMessages = history.map(entry => ({
-      role: entry.role === "user" ? "user" : "assistant",
-      content: entry.content,
-    }));
+    const contextSummary = history
+      .slice(-10)
+      .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
+      .join("\n");
 
     // Triage: ask the cheap model whether to handle or delegate
     onProgress?.({ type: "status", text: "Triaging request..." });
+
     const toolNames = Array.from(this.tools.keys());
     const triagePrompt = toolNames.length
       ? `${DELEGATION_SYSTEM_PROMPT}\n\nAvailable tools: ${toolNames.join(", ")}\n\nIf the user's request could benefit from any of these tools, ALWAYS delegate.`
       : DELEGATION_SYSTEM_PROMPT;
 
-    const triageModel = createModel(modeConfig.triage.model);
-    const triageContext: Context = {
-      systemPrompt: triagePrompt,
-      messages: [
-        ...contextMessages.slice(-10).map(m => ({
-          role: m.role as "user",
-          content: m.content,
-          timestamp: Date.now(),
-        })),
-        { role: "user", content: msg.text, timestamp: Date.now() },
-      ],
-    };
+    const triageSystemPrompt = contextSummary
+      ? `${triagePrompt}\n\n## Recent conversation context:\n${contextSummary}`
+      : triagePrompt;
 
-    const triageResponse = await completeLLM(triageModel, triageContext);
-    const textContent = triageResponse.content.filter(c => c.type === "text");
-    const text = textContent.map(c => (c as any).text).join("");
+    try {
+      console.log(`[orchestrator] Creating triage session with model: ${modeConfig.triage.model}`);
 
-    // Log token usage for triage
-    const triageCost = calculateCost(
-      modeConfig.triage.model,
-      triageResponse.usage.input,
-      triageResponse.usage.output
-    );
-    sessionManager.appendSession({
-      timestamp: Date.now(),
-      role: "assistant",
-      content: text,
-      usage: {
-        inputTokens: triageResponse.usage.input,
-        outputTokens: triageResponse.usage.output,
-        model: modeConfig.triage.model,
-        cost: triageCost,
-      },
-    });
+      const { session: triageSession } = await createPiSession({
+        modelString: modeConfig.triage.model,
+        systemPrompt: triageSystemPrompt,
+        authStorage: this.authStorage,
+      });
 
-    console.log(`[triage] ${modeConfig.triage.model}: ${triageResponse.usage.input} in / ${triageResponse.usage.output} out / $${triageCost.toFixed(4)}`);
+      const triageResponse = await promptSimple(triageSession, msg.text);
 
-    const delegateIdx = text.indexOf("DELEGATE:");
+      console.log(`[orchestrator] Triage response: ${triageResponse.slice(0, 200)}`);
 
-    if (delegateIdx !== -1) {
-      const taskDescription = text.slice(delegateIdx + "DELEGATE:".length).trim();
-      onProgress?.({ type: "status", text: "Delegating to smart agent..." });
-      return this.delegateToSmart(taskDescription, modeConfig, msg.sender, onProgress);
+      // Log triage response (usage estimation - SDK doesn't expose exact tokens easily)
+      sessionManager.appendSession({
+        timestamp: Date.now(),
+        role: "assistant",
+        content: triageResponse,
+        usage: {
+          inputTokens: Math.ceil(triageSystemPrompt.length / 4) + Math.ceil(msg.text.length / 4),
+          outputTokens: Math.ceil(triageResponse.length / 4),
+          model: modeConfig.triage.model,
+          cost: calculateCost(modeConfig.triage.model, 500, 100), // Rough estimate
+        },
+      });
+
+      const delegateIdx = triageResponse.indexOf("DELEGATE:");
+
+      if (delegateIdx !== -1) {
+        const taskDescription = triageResponse.slice(delegateIdx + "DELEGATE:".length).trim();
+        onProgress?.({ type: "status", text: "Delegating to smart agent..." });
+        return this.delegateToSmart(taskDescription, modeConfig, msg.sender, contextSummary, onProgress);
+      }
+
+      // Triage handled it directly
+      if (triageResponse.trim()) {
+        onProgress?.({ type: "done", finalText: triageResponse });
+        return { text: triageResponse };
+      }
+
+      // Empty response from triage - fall through to smart agent
+      console.log(`[orchestrator] Triage returned empty, escalating to smart agent`);
+      onProgress?.({ type: "status", text: "Escalating to smart agent..." });
+      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
+
+    } catch (err) {
+      console.error(`[orchestrator] Triage error:`, err);
+
+      // If triage fails, try smart agent directly
+      onProgress?.({ type: "status", text: "Triage failed, trying smart agent..." });
+      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
     }
-
-    // Triage handled it directly
-    onProgress?.({ type: "done", finalText: text });
-    return { text };
   }
 
-  /** Delegate work to a smart agent using pi-agent-core */
+  /** Delegate work to a smart agent using Pi SDK */
   private async delegateToSmart(
     task: string,
     modeConfig: ModeConfig,
     userId: string,
+    contextSummary: string,
     onProgress?: (event: StreamProgressEvent) => void,
   ): Promise<AgentResponse> {
     const sessionId = randomUUID().slice(0, 8);
@@ -313,202 +348,68 @@ export class AgentOrchestrator {
     this.sessions.set(sessionId, session);
 
     onProgress?.({ type: "status", text: `Working on: ${task.slice(0, 60)}...` });
-    const result = await this.runSmartAgent(sessionId, task, modeConfig, userId, onProgress);
+    const result = await this.runSmartAgent(sessionId, task, modeConfig, userId, contextSummary, onProgress);
     return { text: result, metadata: { sessionId } };
   }
 
-  /** Execute the smart agent using pi-agent-core */
+  /** Execute the smart agent using Pi SDK */
   private async runSmartAgent(
     sessionId: string,
     task: string,
     modeConfig: ModeConfig,
     userId: string,
+    contextSummary: string,
     onProgress?: (event: StreamProgressEvent) => void,
   ): Promise<string> {
     const session = this.sessions.get(sessionId)!;
     const sessionManager = this.getSessionManager(userId);
-    const smartModel = createModel(modeConfig.smart.model);
 
-    // Load conversation history
-    const history = sessionManager.loadSession(50);
-    const piMessages: any[] = history.slice(-10).map(entry => {
-      if (entry.role === "user") {
-        return {
-          role: "user",
-          content: entry.content,
-          timestamp: entry.timestamp,
-        };
-      } else {
-        // Convert assistant messages back to pi-ai format
-        return {
-          role: "assistant",
-          content: [{ type: "text", text: entry.content }],
-          api: smartModel.api,
-          provider: smartModel.provider,
-          model: smartModel.name,
-          usage: entry.usage ? {
-            input: entry.usage.inputTokens,
-            output: entry.usage.outputTokens,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: entry.usage.inputTokens + entry.usage.outputTokens,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: entry.usage.cost },
-          } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: "stop" as const,
-          timestamp: entry.timestamp,
-        };
-      }
-    });
+    // Build system prompt with context
+    const smartSystemPrompt = contextSummary
+      ? `${modeConfig.systemPrompt}\n\n## Recent conversation context:\n${contextSummary}`
+      : modeConfig.systemPrompt;
 
-    // Convert tools to pi-agent-core AgentTool format
-    const agentTools = this.getTools().map(tool => {
-      // Convert JSON schema to TypeBox
-      const params = tool.parameters as any;
-      let typeboxSchema;
+    try {
+      console.log(`[orchestrator] Creating smart session with model: ${modeConfig.smart.model}`);
 
-      if (params.properties) {
-        const properties: Record<string, any> = {};
-        for (const [key, value] of Object.entries(params.properties as Record<string, any>)) {
-          if (value.type === "string") {
-            properties[key] = Type.String({ description: value.description });
-          } else if (value.type === "number") {
-            properties[key] = Type.Number({ description: value.description });
-          } else if (value.type === "boolean") {
-            properties[key] = Type.Boolean({ description: value.description });
-          } else if (value.type === "array") {
-            properties[key] = Type.Array(Type.Any(), { description: value.description });
-          } else {
-            properties[key] = Type.Any({ description: value.description });
-          }
-        }
-        typeboxSchema = Type.Object(properties);
-      } else {
-        typeboxSchema = Type.Object({});
-      }
+      const { session: piSession } = await createPiSession({
+        modelString: modeConfig.smart.model,
+        systemPrompt: smartSystemPrompt,
+        maxTokens: modeConfig.smart.maxTokens,
+        authStorage: this.authStorage,
+      });
 
-      return {
-        name: tool.name,
-        label: tool.name,
-        description: tool.description,
-        parameters: typeboxSchema,
-        execute: async (toolCallId: string, params: any) => {
-          const result = await tool.execute(params);
+      const finalText = await promptWithStreaming(piSession, task, onProgress);
 
-          // Log tool usage
-          sessionManager.appendSession({
-            timestamp: Date.now(),
-            role: "tool_result",
-            content: result,
-            toolName: tool.name,
-          });
+      console.log(`[orchestrator] Smart response: ${finalText.slice(0, 200)}`);
 
-          session.lastUpdate = `Used tool: ${tool.name}`;
-          this.emitStatus(sessionId, `Tool: ${tool.name}`);
-
-          return {
-            content: [{ type: "text" as const, text: result }],
-            details: {},
-          };
+      // Log final response with estimated usage
+      sessionManager.appendSession({
+        timestamp: Date.now(),
+        role: "assistant",
+        content: finalText,
+        usage: {
+          inputTokens: Math.ceil(smartSystemPrompt.length / 4) + Math.ceil(task.length / 4),
+          outputTokens: Math.ceil(finalText.length / 4),
+          model: modeConfig.smart.model,
+          cost: calculateCost(modeConfig.smart.model, 1000, 500), // Rough estimate
         },
-      };
-    });
+      });
 
-    // Create pi-agent-core Agent
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: modeConfig.systemPrompt,
-        model: smartModel,
-        tools: agentTools,
-        messages: piMessages,
-        isStreaming: false,
-        streamMessage: null,
-        pendingToolCalls: new Set(),
-        thinkingLevel: "off",
-      },
-    });
+      session.status = "completed";
+      session.lastUpdate = finalText;
+      this.emitStatus(sessionId, `Completed: ${finalText.slice(0, 200)}`);
 
-    let accumulatedText = "";
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let isComplete = false;
+      return finalText || "I processed your request but couldn't generate a response.";
 
-    // Subscribe to agent events
-    agent.subscribe((event) => {
-      if (event.type === "message_update") {
-        // Extract text from content
-        const assistantMsg = event.message as any;
-        if (assistantMsg.content) {
-          const textParts = assistantMsg.content.filter((c: any) => c.type === "text");
-          const newText = textParts.map((c: any) => c.text).join("");
-          if (newText !== accumulatedText) {
-            const delta = newText.slice(accumulatedText.length);
-            accumulatedText = newText;
-            onProgress?.({ type: "text_delta", text: accumulatedText, delta });
-          }
-        }
+    } catch (err) {
+      console.error(`[orchestrator] Smart agent error:`, err);
+      session.status = "failed";
+      session.lastUpdate = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
+      this.emitStatus(sessionId, session.lastUpdate);
 
-        // Track usage from assistant message event
-        const evt = event.assistantMessageEvent;
-        if (evt.type === "done" || evt.type === "error") {
-          // Extract usage from the completed message
-          if (assistantMsg.usage) {
-            totalInputTokens += assistantMsg.usage.input || 0;
-            totalOutputTokens += assistantMsg.usage.output || 0;
-          }
-        }
-      } else if (event.type === "message_end") {
-        // Also track usage when message completes
-        const assistantMsg = event.message as any;
-        if (assistantMsg.usage) {
-          totalInputTokens += assistantMsg.usage.input || 0;
-          totalOutputTokens += assistantMsg.usage.output || 0;
-        }
-      } else if (event.type === "tool_execution_start") {
-        onProgress?.({ type: "tool_use", toolName: event.toolName });
-      } else if (event.type === "agent_end") {
-        isComplete = true;
-      }
-    });
-
-    // Send the task as a prompt
-    await agent.prompt(task);
-
-    // Wait for agent to finish
-    await agent.waitForIdle();
-
-    // Extract final text from the last assistant message
-    const messages = agent.state.messages;
-    const lastAssistantMsg = [...messages].reverse().find(m => (m as any).role === "assistant");
-    let finalText = accumulatedText;
-
-    if (lastAssistantMsg && (lastAssistantMsg as any).content) {
-      const textParts = (lastAssistantMsg as any).content.filter((c: any) => c.type === "text");
-      finalText = textParts.map((c: any) => c.text).join("") || accumulatedText;
+      throw err;
     }
-
-    // Calculate and log cost
-    const cost = calculateCost(modeConfig.smart.model, totalInputTokens, totalOutputTokens);
-    console.log(`[smart] ${modeConfig.smart.model}: ${totalInputTokens} in / ${totalOutputTokens} out / $${cost.toFixed(4)}`);
-
-    // Log final response with usage
-    sessionManager.appendSession({
-      timestamp: Date.now(),
-      role: "assistant",
-      content: finalText,
-      usage: {
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        model: modeConfig.smart.model,
-        cost,
-      },
-    });
-
-    session.status = "completed";
-    session.lastUpdate = finalText;
-    this.emitStatus(sessionId, `Completed: ${finalText.slice(0, 200)}`);
-
-    onProgress?.({ type: "done", finalText });
-    return finalText;
   }
 
   /** Handle built-in slash commands */
