@@ -25,12 +25,15 @@ interface LLMResponse {
 export class LLMClient {
   private anthropic: Anthropic | null = null;
   private openai: OpenAI | null = null;
+  private openrouter: OpenAI | null = null;
 
   constructor(
     private keys: {
       anthropic?: string;
       openai?: string;
+      openrouter?: string;
     },
+    private fallbackProvider?: string,
   ) {}
 
   private getAnthropic(): Anthropic {
@@ -47,13 +50,48 @@ export class LLMClient {
     return this.openai;
   }
 
+  private getOpenRouter(): OpenAI {
+    if (!this.openrouter) {
+      this.openrouter = new OpenAI({
+        apiKey: this.keys.openrouter,
+        baseURL: "https://openrouter.ai/api/v1",
+      });
+    }
+    return this.openrouter;
+  }
+
   async chat(request: LLMRequest): Promise<LLMResponse> {
     const { provider } = parseModel(request.model.model);
 
+    try {
+      return await this.chatWithProvider(provider, request);
+    } catch (err) {
+      // If there's a fallback provider and it's different from what just failed, try it
+      if (this.fallbackProvider && this.fallbackProvider !== provider) {
+        const fallbackModel = `${this.fallbackProvider}/${parseModel(request.model.model).model}`;
+        console.warn(
+          `[llm] ${provider} failed, falling back to ${this.fallbackProvider}: ${err instanceof Error ? err.message : err}`,
+        );
+        const fallbackRequest = {
+          ...request,
+          model: { ...request.model, model: fallbackModel },
+        };
+        return this.chatWithProvider(this.fallbackProvider, fallbackRequest);
+      }
+      throw err;
+    }
+  }
+
+  private async chatWithProvider(
+    provider: string,
+    request: LLMRequest,
+  ): Promise<LLMResponse> {
     if (provider === "anthropic") {
       return this.chatAnthropic(request);
     } else if (provider === "openai") {
       return this.chatOpenAI(request);
+    } else if (provider === "openrouter") {
+      return this.chatOpenRouter(request);
     }
 
     throw new Error(`Unsupported provider: ${provider}`);
@@ -133,6 +171,50 @@ export class LLMClient {
       },
     };
   }
+
+  /**
+   * OpenRouter uses the OpenAI-compatible API format.
+   * Model names are passed through as-is (e.g. "anthropic/claude-3.5-sonnet")
+   * since OpenRouter expects the full provider/model slug.
+   */
+  private async chatOpenRouter(request: LLMRequest): Promise<LLMResponse> {
+    const client = this.getOpenRouter();
+    const { model } = parseModel(request.model.model);
+
+    const tools = request.tools?.map((t) => ({
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      },
+    }));
+
+    const response = await client.chat.completions.create({
+      model,
+      max_tokens: request.maxTokens ?? request.model.maxTokens,
+      messages: [
+        { role: "system", content: request.systemPrompt },
+        ...request.messages,
+      ],
+      ...(tools?.length ? { tools } : {}),
+    });
+
+    const choice = response.choices[0];
+    const toolCalls = choice?.message?.tool_calls?.map((tc) => ({
+      name: tc.function.name,
+      params: JSON.parse(tc.function.arguments),
+    }));
+
+    return {
+      text: choice?.message?.content ?? "",
+      toolCalls,
+      usage: {
+        inputTokens: response.usage?.prompt_tokens ?? 0,
+        outputTokens: response.usage?.completion_tokens ?? 0,
+      },
+    };
+  }
 }
 
 function parseModel(modelString: string): {
@@ -140,9 +222,13 @@ function parseModel(modelString: string): {
   model: string;
 } {
   const parts = modelString.split("/");
-  if (parts.length === 2) {
-    return { provider: parts[0], model: parts[1] };
+  if (parts.length >= 2) {
+    // For openrouter, the model slug itself can contain slashes
+    // e.g. "openrouter/anthropic/claude-3.5-sonnet"
+    const provider = parts[0];
+    const model = parts.slice(1).join("/");
+    return { provider, model };
   }
-  // Default to anthropic if no provider prefix
-  return { provider: "anthropic", model: modelString };
+  // Default to openrouter if no provider prefix
+  return { provider: "openrouter", model: modelString };
 }

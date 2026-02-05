@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
+import dotenv from "dotenv";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
   LLMClient,
@@ -19,10 +23,13 @@ import { Scheduler } from "@jarvis/scheduler";
 import { StatusReporter } from "@jarvis/status-reporter";
 
 async function main(): Promise<void> {
+  // Load .env from project root
+  dotenv.config({ path: resolve(projectRoot, ".env") });
+
   console.log("Starting Jarvis...\n");
 
   // --- Load config ---
-  const configDir = process.env.JARVIS_CONFIG_DIR ?? "./config";
+  const configDir = process.env.JARVIS_CONFIG_DIR ?? resolve(projectRoot, "config");
   const defaultMode = process.env.JARVIS_MODE ?? "personal";
 
   const modes: ModeConfig[] = [];
@@ -41,10 +48,14 @@ async function main(): Promise<void> {
   }
 
   // --- Initialize core ---
-  const llm = new LLMClient({
-    anthropic: process.env.ANTHROPIC_API_KEY,
-    openai: process.env.OPENAI_API_KEY,
-  });
+  const llm = new LLMClient(
+    {
+      openrouter: process.env.OPENROUTER_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY,
+    },
+    "openai", // fallback provider if OpenRouter fails
+  );
 
   const tmux = new TmuxManager();
   const orchestrator = new AgentOrchestrator(llm, tmux);
