@@ -17,6 +17,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
 import type { StreamProgressEvent } from "./types.js";
+import type { CoreToolDefinition } from "./tools/core-tools.js";
 
 // Provider to environment variable mapping
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -62,11 +63,12 @@ export function createAuthStorage(): AuthStorage {
 }
 
 /**
- * Create a minimal resource loader that just sets a system prompt.
+ * Create a minimal resource loader that sets a system prompt and optional extensions.
  */
-function createMinimalResourceLoader(systemPrompt: string): ResourceLoader {
+function createMinimalResourceLoader(systemPrompt: string, extensions: any[] = []): ResourceLoader {
+  const runtime = createExtensionRuntime();
   return {
-    getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+    getExtensions: () => ({ extensions, errors: [], runtime }),
     getSkills: () => ({ skills: [], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -85,6 +87,9 @@ export interface PiSessionConfig {
   maxTokens?: number;
   authStorage?: AuthStorage;
   modelRegistry?: ModelRegistry;
+  tools?: CoreToolDefinition[];
+  cwd?: string;
+  extensions?: any[]; // Pi-coding-agent extensions
 }
 
 export interface PiSessionResult {
@@ -116,7 +121,16 @@ export async function createPiSession(config: PiSessionConfig): Promise<PiSessio
     retry: { enabled: true, maxRetries: 3, baseDelayMs: 1000 },
   });
 
-  const resourceLoader = createMinimalResourceLoader(config.systemPrompt);
+  const resourceLoader = createMinimalResourceLoader(config.systemPrompt, config.extensions);
+
+  // Convert our CoreToolDefinition to pi-coding-agent's ToolDefinition format
+  const customTools = config.tools?.map((tool) => ({
+    ...tool,
+    execute: async (toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any) => {
+      // Inject cwd context when calling the tool's execute function
+      return tool.execute(toolCallId, params, signal, onUpdate, { cwd: config.cwd || process.cwd() });
+    },
+  }));
 
   const { session } = await createAgentSession({
     model,
@@ -124,7 +138,8 @@ export async function createPiSession(config: PiSessionConfig): Promise<PiSessio
     authStorage,
     modelRegistry,
     resourceLoader,
-    tools: [], // No tools for basic chat
+    tools: [], // Don't use built-in tools
+    customTools, // Use our custom tools
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });
