@@ -1,14 +1,15 @@
 ---
-status: diagnosed
+status: complete
 phase: 01-foundation
-source: [01-01-SUMMARY.md, 01-02-SUMMARY.md]
+source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md]
 started: 2026-02-05T12:00:00Z
-updated: 2026-02-05T12:00:00Z
+updated: 2026-02-05T20:35:00Z
+retest: 2026-02-05 (01-03 fix verified guards work, but found new root cause)
 ---
 
 ## Current Test
 
-[testing complete]
+[retest complete]
 
 ## Tests
 
@@ -19,20 +20,23 @@ result: pass
 ### 2. Streaming Response with Progressive Edits
 expected: During a longer response, see the Telegram message update progressively (edits appearing as text generates, not all at once at the end).
 result: issue
-reported: "Something went wrong: Telegram API error: Bad Request: message text is empty"
+reported: "I processed your request but have no response to show."
 severity: major
+retest: 2026-02-05 (guard works, but orchestrator returns empty)
 
 ### 3. Tool Usage Display
 expected: When Jarvis uses a tool (like searching or reading), see "Using tool: X..." message in Telegram while it executes.
 result: issue
-reported: "Something went wrong: Telegram API error: Bad Request: message text is empty"
+reported: "I processed your request but have no response to show." (same as Test 2)
 severity: major
+retest: 2026-02-05 (guard works, but orchestrator returns empty)
 
 ### 4. Session Persistence Across Restarts
 expected: After Jarvis restarts, ask "what did we just talk about?" - it should remember recent conversation context (last ~50 messages).
 result: issue
-reported: "[gateway] Error processing message: Telegram API error: Bad Request: message text is empty"
+reported: "I processed your request but have no response to show." (same as Test 2)
 severity: major
+retest: 2026-02-05 (guard works, but orchestrator returns empty)
 
 ### 5. Usage Command
 expected: Send "/usage" or "/usage today" to get a breakdown of token usage and cost per model for today.
@@ -52,39 +56,34 @@ skipped: 0
 
 ## Gaps
 
-- truth: "During a longer response, see the Telegram message update progressively"
+- truth: "Orchestrator returns actual LLM responses instead of empty text"
   status: failed
-  reason: "User reported: Something went wrong: Telegram API error: Bad Request: message text is empty"
-  severity: major
-  test: 2
-  root_cause: "Gateway and Telegram channel don't guard against empty response text. When orchestrator returns empty text (triage shows 0 in/0 out tokens), editMessageText fails."
+  reason: "User reported: All requests show fallback message 'I processed your request but have no response to show.' indicating orchestrator returns empty response.text"
+  severity: blocker
+  test: 2, 3, 4
+  root_cause: |
+    Triage LLM call returns empty content. In agent.ts:259-261:
+    ```
+    const triageResponse = await completeLLM(triageModel, triageContext);
+    const textContent = triageResponse.content.filter(c => c.type === "text");
+    const text = textContent.map(c => (c as any).text).join("");
+    ```
+    If triageResponse.content is empty or has no "text" type items, result is empty string.
+
+    Likely causes (in order of probability):
+    1. OPENROUTER_API_KEY not set or invalid on server
+    2. pi-ai not returning content correctly for openrouter provider
+    3. Model string format mismatch with pi-ai expectations
   artifacts:
-    - path: "packages/gateway/src/index.ts"
-      issue: "Line 162: editMessage called without checking if response.text is empty"
-    - path: "packages/channels/telegram/src/index.ts"
-      issue: "Line 190-199: editMessage doesn't guard against empty text parameter"
+    - path: "packages/core/src/agent.ts"
+      issue: "Lines 259-261: triageResponse.content may be empty from pi-ai"
+    - path: "packages/core/src/llm.ts"
+      issue: "Lines 76-84: completeLLM passes through pi-ai complete() result"
+    - path: "config/personal.json"
+      issue: "Model: openrouter/anthropic/claude-3.5-haiku - verify pi-ai supports this format"
   missing:
-    - "Add empty text guard in gateway before editMessage call"
-    - "Add empty text guard in Telegram editMessage method"
-    - "Investigate why triage returns 0 tokens (pi-ai usage reporting)"
-  debug_session: ""
-
-- truth: "When Jarvis uses a tool, see 'Using tool: X...' message in Telegram"
-  status: failed
-  reason: "User reported: Something went wrong: Telegram API error: Bad Request: message text is empty"
-  severity: major
-  test: 3
-  root_cause: "Same root cause as Test 2 - empty response text passed to Telegram API"
-  artifacts: []
-  missing: []
-  debug_session: ""
-
-- truth: "After restart, Jarvis remembers recent conversation context"
-  status: failed
-  reason: "User reported: [gateway] Error processing message: Telegram API error: Bad Request: message text is empty"
-  severity: major
-  test: 4
-  root_cause: "Same root cause as Test 2 - empty response text passed to Telegram API. Session persistence itself may work but can't test due to response failure."
-  artifacts: []
-  missing: []
+    - "Verify OPENROUTER_API_KEY is set on server"
+    - "Add debug logging before/after completeLLM call to see actual response"
+    - "Test pi-ai directly with same model string"
+    - "Consider falling back to direct API call if pi-ai fails"
   debug_session: ""
