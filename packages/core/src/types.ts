@@ -4,7 +4,6 @@ export interface ModelConfig {
   provider: string;
   model: string;
   maxTokens: number;
-  apiKey?: string;
 }
 
 export interface ModeConfig {
@@ -73,6 +72,9 @@ export interface Channel {
     onMessage: (msg: Message) => Promise<void>,
   ) => Promise<void>;
   send: (recipient: string, text: string) => Promise<void>;
+  sendTyping?: (recipient: string) => Promise<void>;
+  sendPlaceholder?: (recipient: string, text: string) => Promise<string | undefined>;
+  editMessage?: (recipient: string, messageId: string, text: string) => Promise<void>;
   shutdown: () => Promise<void>;
 }
 
@@ -89,4 +91,12 @@ export interface StatusUpdate {
   summary: string;
   progress?: number; // 0-100
   timestamp: number;
+}
+
+export interface StreamProgressEvent {
+  type: 'text_delta' | 'tool_use' | 'status' | 'done';
+  text?: string;       // accumulated text so far (for text_delta)
+  delta?: string;      // new text chunk (for text_delta)
+  toolName?: string;   // tool being used (for tool_use)
+  finalText?: string;  // complete response (for done)
 }
