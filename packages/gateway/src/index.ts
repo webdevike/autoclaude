@@ -158,10 +158,12 @@ export class Gateway {
       }
 
       // Final message edit with complete response
+      const finalText = response.text?.trim() || "I processed your request but have no response to show.";
+
       if (placeholderId && channel.editMessage) {
-        await channel.editMessage(message.sender, placeholderId, response.text);
+        await channel.editMessage(message.sender, placeholderId, finalText);
       } else {
-        await channel.send(message.sender, response.text);
+        await channel.send(message.sender, finalText);
       }
     } catch (err) {
       // Clear any pending edit timer on error

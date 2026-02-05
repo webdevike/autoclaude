@@ -40,18 +40,32 @@ export class TelegramChannel implements Channel {
   private async api<T>(
     method: string,
     body?: Record<string, unknown>,
+    retries = 2,
   ): Promise<T> {
     const url = `https://api.telegram.org/bot${this.token}/${method}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = (await res.json()) as TelegramResponse<T>;
-    if (!data.ok) {
-      throw new Error(`Telegram API error: ${data.description ?? "unknown"}`);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = (await res.json()) as TelegramResponse<T>;
+        if (!data.ok) {
+          throw new Error(`Telegram API error: ${data.description ?? "unknown"}`);
+        }
+        return data.result;
+      } catch (err) {
+        if (attempt < retries) {
+          const delay = 1000 * (attempt + 1);
+          console.warn(`[telegram] API ${method} failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
     }
-    return data.result;
+    throw new Error("Unreachable");
   }
 
   async initialize(
@@ -154,6 +168,48 @@ export class TelegramChannel implements Channel {
     tick();
   }
 
+  async sendTyping(recipient: string): Promise<void> {
+    const chatId = chatIdMap.get(recipient);
+    if (!chatId) return;
+    await this.api("sendChatAction", {
+      chat_id: Number(chatId),
+      action: "typing",
+    });
+  }
+
+  async sendPlaceholder(recipient: string, text: string): Promise<string | undefined> {
+    const chatId = chatIdMap.get(recipient);
+    if (!chatId) return undefined;
+    const result = await this.api<{ message_id: number }>("sendMessage", {
+      chat_id: Number(chatId),
+      text,
+    });
+    return String(result.message_id);
+  }
+
+  async editMessage(recipient: string, messageId: string, text: string): Promise<void> {
+    const chatId = chatIdMap.get(recipient);
+    if (!chatId) return;
+
+    // Guard against empty text - Telegram rejects empty messages
+    const safeText = text?.trim() || "...";
+
+    const chunks = splitMessage(safeText, 4096);
+    // Edit the placeholder with the first chunk
+    await this.api("editMessageText", {
+      chat_id: Number(chatId),
+      message_id: Number(messageId),
+      text: chunks[0],
+    });
+    // Send remaining chunks as new messages
+    for (let i = 1; i < chunks.length; i++) {
+      await this.api("sendMessage", {
+        chat_id: Number(chatId),
+        text: chunks[i],
+      });
+    }
+  }
+
   async send(recipient: string, text: string): Promise<void> {
     const chatId = chatIdMap.get(recipient);
     if (!chatId) {
@@ -163,7 +219,10 @@ export class TelegramChannel implements Channel {
       return;
     }
 
-    const chunks = splitMessage(text, 4096);
+    // Guard against empty text
+    const safeText = text?.trim() || "...";
+
+    const chunks = splitMessage(safeText, 4096);
     for (const chunk of chunks) {
       await this.api("sendMessage", {
         chat_id: Number(chatId),
