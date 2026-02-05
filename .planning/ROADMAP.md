@@ -49,9 +49,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Standardize core tools
-- [ ] 02-02: Convert integrations to Extensions
-- [ ] 02-03: Integrate pi-coding-agent
+- [ ] 02-01-PLAN.md -- Add core coding tools (Read, Write, Edit, Bash) with TypeBox schemas
+- [ ] 02-02-PLAN.md -- Convert Gmail, Linear, Notion to Extensions + add Exa web search
+- [ ] 02-03-PLAN.md -- Integrate pi-coding-agent for coding task delegation with tmux visibility
 
 ### Phase 3: Intelligence
 **Goal**: Agent remembers user preferences and switches modes on-the-fly
@@ -93,6 +93,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-02-05 |
-| 2. Integrations | 0/3 | Not started | - |
+| 2. Integrations | 0/3 | Planning complete | - |
 | 3. Intelligence | 0/2 | Not started | - |
 | 4. Autonomy | 0/1 | Not started | - |
