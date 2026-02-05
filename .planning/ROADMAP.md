@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 1: Foundation
 **Goal**: Agent uses pi-mono for all LLM calls and agent execution with streaming, multi-provider support, and session persistence
 **Depends on**: Nothing (first phase)
-**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, AGNT-01, AGNT-02, AGNT-03
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, AGNT-01, AGNT-02, AGNT-03, COMM-01, COMM-02, COMM-03
 **Success Criteria** (what must be TRUE):
   1. Agent can call any of 20+ LLM providers through unified pi-ai API
   2. Responses stream token-by-token to Telegram with progressive message edits
@@ -37,21 +37,21 @@ Plans:
 - [x] 01-03-PLAN.md -- Fix empty message guards (gap closure from UAT)
 
 ### Phase 2: Integrations
-**Goal**: All tools follow pi-mono Extension format and Telegram channel streams agent events
+**Goal**: All tools follow pi-mono Extension format and coding tasks delegate to pi-coding-agent
 **Depends on**: Phase 1
-**Requirements**: AGNT-04, COMM-01, COMM-02, COMM-03, TOOL-01, TOOL-02, TOOL-03, TOOL-04
+**Requirements**: AGNT-04, TOOL-01, TOOL-02, TOOL-03, TOOL-04
+**Note**: COMM-01, COMM-02, COMM-03 were completed in Phase 1 (Telegram channel, streaming, commands already implemented)
 **Success Criteria** (what must be TRUE):
   1. Agent has 4 core tools (Read, Write, Edit, Bash) from pi-mono
   2. Gmail, Linear, Notion, and Exa available as hot-reloadable Extensions
-  3. Telegram bot authenticates allowed users and accepts commands
-  4. Long-running operations show progress in Telegram via streaming updates
-  5. Coding tasks delegate to pi-coding-agent running in tmux
-**Plans**: 3 plans
+  3. Coding tasks delegate to pi-coding-agent running in tmux
+**Plans**: 4 plans
 
 Plans:
 - [ ] 02-01-PLAN.md -- Add core coding tools (Read, Write, Edit, Bash) with TypeBox schemas
 - [ ] 02-02-PLAN.md -- Convert Gmail, Linear, Notion to Extensions + add Exa web search
 - [ ] 02-03-PLAN.md -- Integrate pi-coding-agent for coding task delegation with tmux visibility
+- [ ] 02-04-PLAN.md -- Gap closure: Initialize extensions + fix tmux cleanup
 
 ### Phase 3: Intelligence
 **Goal**: Agent remembers user preferences and switches modes on-the-fly
