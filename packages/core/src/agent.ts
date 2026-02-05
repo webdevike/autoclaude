@@ -10,6 +10,7 @@ import {
   promptSimple,
   parseModelString,
 } from "./pi-session.js";
+import { createCoreTools } from "./tools/core-tools.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -21,6 +22,20 @@ import type {
   SessionEntry,
   StreamProgressEvent,
 } from "./types.js";
+
+// Import extensions
+import gmailExtension from "@jarvis/extensions/gmail/index.js";
+import exaExtension from "@jarvis/extensions/exa/index.js";
+import linearExtension from "@jarvis/extensions/linear/index.js";
+import notionExtension from "@jarvis/extensions/notion/index.js";
+
+// Define extensions array
+const EXTENSIONS = [
+  gmailExtension,
+  exaExtension,
+  linearExtension,
+  notionExtension,
+];
 
 const DELEGATION_SYSTEM_PROMPT = `You are a triage agent. Your job is to decide whether to handle a request yourself or delegate it to a smarter, more capable agent.
 
@@ -264,9 +279,15 @@ export class AgentOrchestrator {
     // Triage: ask the cheap model whether to handle or delegate
     onProgress?.({ type: "status", text: "Triaging request..." });
 
-    const toolNames = Array.from(this.tools.keys());
-    const triagePrompt = toolNames.length
-      ? `${DELEGATION_SYSTEM_PROMPT}\n\nAvailable tools: ${toolNames.join(", ")}\n\nIf the user's request could benefit from any of these tools, ALWAYS delegate.`
+    // Include both registered tools and core tools
+    const cwd = modeConfig.cwd || process.cwd();
+    const coreTools = createCoreTools(cwd);
+    const coreToolNames = coreTools.map(t => t.name);
+    const registeredToolNames = Array.from(this.tools.keys());
+    const allToolNames = [...registeredToolNames, ...coreToolNames];
+
+    const triagePrompt = allToolNames.length
+      ? `${DELEGATION_SYSTEM_PROMPT}\n\nAvailable tools: ${allToolNames.join(", ")}\n\nIf the user's request could benefit from any of these tools, ALWAYS delegate.`
       : DELEGATION_SYSTEM_PROMPT;
 
     const triageSystemPrompt = contextSummary
@@ -372,11 +393,18 @@ export class AgentOrchestrator {
     try {
       console.log(`[orchestrator] Creating smart session with model: ${modeConfig.smart.model}`);
 
+      // Create core tools for this session
+      const cwd = modeConfig.cwd || process.cwd();
+      const tools = createCoreTools(cwd);
+
       const { session: piSession } = await createPiSession({
         modelString: modeConfig.smart.model,
         systemPrompt: smartSystemPrompt,
         maxTokens: modeConfig.smart.maxTokens,
         authStorage: this.authStorage,
+        tools,
+        cwd,
+        extensions: EXTENSIONS,
       });
 
       const finalText = await promptWithStreaming(piSession, task, onProgress);

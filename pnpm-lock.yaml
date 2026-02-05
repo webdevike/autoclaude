@@ -80,6 +80,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@jarvis/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@mariozechner/pi-agent-core':
         specifier: ^0.52.0
         version: 0.52.0(ws@8.19.0)(zod@3.25.76)
@@ -95,6 +98,31 @@ importers:
       openai:
         specifier: ^6.18.0
         version: 6.18.0(ws@8.19.0)(zod@3.25.76)
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  packages/extensions:
+    dependencies:
+      '@linear/sdk':
+        specifier: ^33.0.0
+        version: 33.0.0
+      '@mariozechner/pi-coding-agent':
+        specifier: ^0.52.3
+        version: 0.52.3(ws@8.19.0)(zod@3.25.76)
+      '@notionhq/client':
+        specifier: ^2.2.15
+        version: 2.3.0
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.48
+      exa-js:
+        specifier: ^1.0.0
+        version: 1.10.2(ws@8.19.0)
+      googleapis:
+        specifier: ^140.0.0
+        version: 140.0.1
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -526,6 +554,10 @@ packages:
 
   '@linear/sdk@28.0.0':
     resolution: {integrity: sha512-s8KWjI9YOFcTXFM/HpBjD80ezuQRy/pBrINK5GWWAl8gfRvJk0YbQM5KGAs2Wz48OsWigCgn4FHI4EEPiHmEeQ==}
+    engines: {node: '>=12.x', yarn: 1.x}
+
+  '@linear/sdk@33.0.0':
+    resolution: {integrity: sha512-T+ZW9PTgVSp00I/2tCgan1LGHa1TrlSU8EuJleIcKldFYsltekSc9duSUaDB28b48zDbHlOCSKzISDpO4dSQ/g==}
     engines: {node: '>=12.x', yarn: 1.x}
 
   '@mariozechner/clipboard-darwin-arm64@0.3.2':
@@ -1080,6 +1112,9 @@ packages:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
 
+  cross-fetch@4.1.0:
+    resolution: {integrity: sha512-uKm5PU+MHTootlWEY+mZ4vvXoCn4fLQxT9dSc1sXVMSFkINTJVN8cAQROpwcKm8bJ/c7rgZVIBWzH5T78sNZZw==}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -1116,6 +1151,10 @@ packages:
   diff@8.0.3:
     resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
     engines: {node: '>=0.3.1'}
+
+  dotenv@16.4.7:
+    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
+    engines: {node: '>=12'}
 
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
@@ -1199,6 +1238,9 @@ packages:
 
   eventemitter3@5.0.4:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
+  exa-js@1.10.2:
+    resolution: {integrity: sha512-nObBipoXKL5uL6Dc8Q3c9GA4xEfunQMdGGqtcCkQSNilzR6AExyVkBxTdpWqC20jKa3/dvXu6otXQLaRyZNqGw==}
 
   express@5.2.1:
     resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
@@ -1332,6 +1374,10 @@ packages:
 
   googleapis-common@7.2.0:
     resolution: {integrity: sha512-/fhDZEJZvOV3X5jmD+fKxMqma5q2Q9nZNSF3kn1F18tpxmA86BcTxAGBQdM0N89Z3bEaIs+HVznSmFJEAmMTjA==}
+    engines: {node: '>=14.0.0'}
+
+  googleapis@140.0.1:
+    resolution: {integrity: sha512-ZGvBX4mQcFXO9ACnVNg6Aqy3KtBPB5zTuue43YVLxwn8HSv8jB7w+uDKoIPSoWuxGROgnj2kbng6acXncOQRNA==}
     engines: {node: '>=14.0.0'}
 
   googleapis@144.0.0:
@@ -1587,6 +1633,18 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
+
+  openai@5.23.2:
+    resolution: {integrity: sha512-MQBzmTulj+MM5O8SKEk/gL8a7s5mktS9zUtAkU257WjvobGc9nKcBuVwjyEEcb9SI8a8Y2G/mzn3vm9n1Jlleg==}
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.23.8
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   openai@6.10.0:
     resolution: {integrity: sha512-ITxOGo7rO3XRMiKA5l7tQ43iNNu+iXGFAcf2t+aWVzzqRaS0i7m1K2BhxNdaveB+5eENhO0VY1FkiZzhBk4v3A==}
@@ -2582,6 +2640,14 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
+  '@linear/sdk@33.0.0':
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@15.10.1)
+      graphql: 15.10.1
+      isomorphic-unfetch: 3.1.0
+    transitivePeerDependencies:
+      - encoding
+
   '@mariozechner/clipboard-darwin-arm64@0.3.2':
     optional: true
 
@@ -3355,6 +3421,12 @@ snapshots:
 
   cookie@0.7.2: {}
 
+  cross-fetch@4.1.0:
+    dependencies:
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
+
   cross-spawn@7.0.6:
     dependencies:
       path-key: 3.1.1
@@ -3380,6 +3452,8 @@ snapshots:
   depd@2.0.0: {}
 
   diff@8.0.3: {}
+
+  dotenv@16.4.7: {}
 
   dotenv@16.6.1: {}
 
@@ -3470,6 +3544,17 @@ snapshots:
   eventemitter3@4.0.7: {}
 
   eventemitter3@5.0.4: {}
+
+  exa-js@1.10.2(ws@8.19.0):
+    dependencies:
+      cross-fetch: 4.1.0
+      dotenv: 16.4.7
+      openai: 5.23.2(ws@8.19.0)(zod@3.25.76)
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.1(zod@3.25.76)
+    transitivePeerDependencies:
+      - encoding
+      - ws
 
   express@5.2.1:
     dependencies:
@@ -3689,6 +3774,14 @@ snapshots:
       qs: 6.14.1
       url-template: 2.0.8
       uuid: 9.0.1
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+
+  googleapis@140.0.1:
+    dependencies:
+      google-auth-library: 9.15.1
+      googleapis-common: 7.2.0
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -3925,6 +4018,11 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openai@5.23.2(ws@8.19.0)(zod@3.25.76):
+    optionalDependencies:
+      ws: 8.19.0
+      zod: 3.25.76
 
   openai@6.10.0(ws@8.19.0)(zod@3.25.76):
     optionalDependencies:

@@ -7,6 +7,7 @@ export {
   promptSimple,
   parseModelString,
 } from "./pi-session.js";
+export { createCoreTools } from "./tools/core-tools.js";
 export type {
   AgentResponse,
   AgentSession,

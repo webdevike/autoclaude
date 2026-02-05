@@ -11,6 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@jarvis/extensions": "workspace:*",
     "@mariozechner/pi-agent-core": "^0.52.0",
     "@mariozechner/pi-ai": "^0.52.2",
     "@mariozechner/pi-coding-agent": "^0.52.3",

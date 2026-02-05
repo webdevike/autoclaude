@@ -17,6 +17,7 @@ export interface ModeConfig {
   integrations: string[];
   statusInterval: number; // seconds between status updates, 0 = disabled
   crons: CronJobConfig[];
+  cwd?: string; // working directory for tool execution (defaults to process.cwd())
 }
 
 export interface CronJobConfig {
