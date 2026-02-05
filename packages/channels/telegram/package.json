@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@jarvis/core": "workspace:*",
-    "@jarvis/gateway": "workspace:*",
-    "grammy": "^1.30.0"
+    "@jarvis/gateway": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

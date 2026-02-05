@@ -1,92 +1,184 @@
-import { Bot } from "grammy";
 import type { Channel, Message } from "@jarvis/core";
 
+interface TelegramUpdate {
+  update_id: number;
+  message?: {
+    message_id: number;
+    from?: { id: number; username?: string };
+    chat: { id: number; type: string };
+    date: number;
+    text?: string;
+  };
+}
+
+interface TelegramResponse<T> {
+  ok: boolean;
+  result: T;
+  description?: string;
+}
+
+/**
+ * Telegram channel using manual short-polling via fetch.
+ * grammY's long polling hangs in some environments, so we
+ * roll our own with a simple setInterval loop.
+ */
 export class TelegramChannel implements Channel {
   name = "telegram";
-  private bot: Bot | null = null;
+  private token: string;
   private allowedUsers: Set<string> = new Set();
+  private running = false;
+  private offset = 0;
+  private pollInterval = 2000;
 
-  constructor(
-    private token: string,
-    allowedUsers?: string[],
-  ) {
+  constructor(token: string, allowedUsers?: string[]) {
+    this.token = token;
     if (allowedUsers?.length) {
       this.allowedUsers = new Set(allowedUsers);
     }
+  }
+
+  private async api<T>(
+    method: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    const url = `https://api.telegram.org/bot${this.token}/${method}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = (await res.json()) as TelegramResponse<T>;
+    if (!data.ok) {
+      throw new Error(`Telegram API error: ${data.description ?? "unknown"}`);
+    }
+    return data.result;
   }
 
   async initialize(
     _config: Record<string, unknown>,
     onMessage: (msg: Message) => Promise<void>,
   ): Promise<void> {
-    this.bot = new Bot(this.token);
+    // Verify token — if this fails, we disable gracefully
+    let me: { username: string };
+    try {
+      me = await this.api<{ username: string }>("getMe");
+    } catch (err) {
+      console.error(
+        `[telegram] Cannot reach Telegram API: ${err instanceof Error ? err.message : err}`,
+      );
+      console.warn("[telegram] Bot disabled — will retry on next restart.");
+      return;
+    }
+    console.log(`[telegram] Bot @${me.username} connected.`);
 
-    this.bot.on("message:text", async (ctx) => {
-      const sender = ctx.from?.username ?? String(ctx.from?.id ?? "unknown");
-      const chatId = String(ctx.chat.id);
+    // Drop pending updates by getting the latest and setting offset past it
+    const pending = await this.api<TelegramUpdate[]>("getUpdates", {
+      offset: -1,
+      limit: 1,
+    });
+    if (pending.length > 0) {
+      this.offset = pending[pending.length - 1].update_id + 1;
+      console.log(`[telegram] Dropped pending updates, offset=${this.offset}`);
+    }
 
-      // If allowedUsers is set, only process messages from those users
-      if (this.allowedUsers.size > 0 && !this.allowedUsers.has(sender)) {
-        await ctx.reply("Not authorized.");
-        return;
+    // Start polling
+    this.running = true;
+    this.poll(onMessage);
+    console.log("[telegram] Polling started.");
+  }
+
+  private poll(onMessage: (msg: Message) => Promise<void>): void {
+    const tick = async (): Promise<void> => {
+      if (!this.running) return;
+
+      try {
+        const updates = await this.api<TelegramUpdate[]>("getUpdates", {
+          offset: this.offset,
+          limit: 20,
+          timeout: 5,
+        });
+
+        for (const update of updates) {
+          this.offset = update.update_id + 1;
+
+          if (!update.message?.text) continue;
+
+          const from = update.message.from;
+          const sender =
+            from?.username ?? String(from?.id ?? "unknown");
+          const chatId = String(update.message.chat.id);
+
+          // Track chat ID for replies
+          chatIdMap.set(sender, chatId);
+
+          // Auth check
+          if (
+            this.allowedUsers.size > 0 &&
+            !this.allowedUsers.has(sender)
+          ) {
+            await this.api("sendMessage", {
+              chat_id: update.message.chat.id,
+              text: "Not authorized.",
+            });
+            continue;
+          }
+
+          const message: Message = {
+            id: String(update.message.message_id),
+            channel: "telegram",
+            channelMessageId: chatId,
+            sender,
+            text: update.message.text,
+            timestamp: update.message.date * 1000,
+            mode: "",
+            metadata: { chatId },
+          };
+
+          console.log(
+            `[telegram] ${sender}: ${update.message.text.slice(0, 100)}`,
+          );
+          await onMessage(message);
+        }
+      } catch (err) {
+        console.error(
+          "[telegram] Poll error:",
+          err instanceof Error ? err.message : err,
+        );
       }
 
-      const message: Message = {
-        id: String(ctx.message.message_id),
-        channel: "telegram",
-        channelMessageId: chatId,
-        sender,
-        text: ctx.message.text,
-        timestamp: ctx.message.date * 1000,
-        mode: "", // Gateway will assign mode
-        metadata: { chatId },
-      };
+      if (this.running) {
+        setTimeout(tick, this.pollInterval);
+      }
+    };
 
-      await onMessage(message);
-    });
-
-    // Store chat IDs for sending messages back
-    this.bot.on("message", async (ctx) => {
-      const sender = ctx.from?.username ?? String(ctx.from?.id ?? "unknown");
-      chatIdMap.set(sender, String(ctx.chat.id));
-    });
-
-    // Catch polling errors
-    this.bot.catch((err) => {
-      console.error("[telegram] Bot error:", err.message ?? err);
-    });
-
-    // bot.start() uses long polling and never resolves — fire and forget
-    this.bot.start({
-      onStart: () => console.log("[telegram] Bot started (polling)."),
-    });
+    tick();
   }
 
   async send(recipient: string, text: string): Promise<void> {
-    if (!this.bot) return;
-
     const chatId = chatIdMap.get(recipient);
     if (!chatId) {
-      console.error(`[telegram] No chat ID for recipient: ${recipient}`);
+      console.error(
+        `[telegram] No chat ID for recipient: ${recipient}`,
+      );
       return;
     }
 
-    // Split long messages (Telegram has a 4096 char limit)
     const chunks = splitMessage(text, 4096);
     for (const chunk of chunks) {
-      await this.bot.api.sendMessage(Number(chatId), chunk);
+      await this.api("sendMessage", {
+        chat_id: Number(chatId),
+        text: chunk,
+      });
     }
   }
 
   async shutdown(): Promise<void> {
-    if (this.bot) {
-      await this.bot.stop();
-      console.log("[telegram] Bot stopped.");
-    }
+    this.running = false;
+    console.log("[telegram] Bot stopped.");
   }
 }
 
-// Simple in-memory map of username -> chatId
+// In-memory map of username/id -> chatId
 const chatIdMap = new Map<string, string>();
 
 function splitMessage(text: string, maxLen: number): string[] {
