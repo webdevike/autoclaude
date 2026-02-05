@@ -54,13 +54,23 @@ function spawnInTmux(cwd: string, sessionId: string): string {
  * Clean up tmux window after task completion.
  */
 function killTmuxWindow(windowName: string): void {
-  try {
-    spawnSync("tmux", ["kill-window", "-t", `jarvis-agents:${windowName}`], {
-      stdio: "ignore",
-    });
+  const result = spawnSync("tmux", ["kill-window", "-t", `jarvis-agents:${windowName}`], {
+    stdio: "pipe",
+  });
+
+  if (result.status === 0) {
     console.log(`[coding-delegate] Killed tmux window: ${windowName}`);
-  } catch (err) {
-    console.error(`[coding-delegate] Failed to kill tmux window: ${err}`);
+  } else {
+    const stderr = result.stderr?.toString().trim() || "unknown error";
+    console.warn(`[coding-delegate] Failed to kill tmux window '${windowName}': ${stderr}`);
+
+    // Diagnostic: check if session exists but window name is wrong
+    const hasSession = spawnSync("tmux", ["has-session", "-t", "jarvis-agents"], { stdio: "ignore" });
+    if (hasSession.status === 0) {
+      const listResult = spawnSync("tmux", ["list-windows", "-t", "jarvis-agents", "-F", "#{window_name}"], { stdio: "pipe" });
+      const windows = listResult.stdout?.toString().trim() || "";
+      console.warn(`[coding-delegate] Current windows: ${windows}`);
+    }
   }
 }
 
