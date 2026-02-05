@@ -11,6 +11,7 @@ import {
   parseModelString,
 } from "./pi-session.js";
 import { createCoreTools } from "./tools/core-tools.js";
+import { delegateToCodingAgent } from "./coding-delegate.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -37,7 +38,7 @@ const EXTENSIONS = [
   notionExtension,
 ];
 
-const DELEGATION_SYSTEM_PROMPT = `You are a triage agent. Your job is to decide whether to handle a request yourself or delegate it to a smarter, more capable agent.
+const DELEGATION_SYSTEM_PROMPT = `You are a triage agent. Your job is to decide whether to handle a request yourself or delegate it to a specialized agent.
 
 Handle it yourself if:
 - It's a simple question or greeting
@@ -45,14 +46,21 @@ Handle it yourself if:
 - It requires a quick factual answer
 - It's a simple command (switch mode, list crons, etc.)
 
-Delegate to a smart agent if:
-- It requires complex reasoning or analysis
-- It involves writing or reviewing code
-- It requires multi-step planning
-- It involves working with integrations (Notion, Linear, Gmail)
-- The user explicitly asks for deep work
+Delegate to a coding agent if:
+- It involves file operations (reading, writing, editing files)
+- It requires shell commands or system operations
+- It involves code analysis or multi-file changes
+- The user explicitly asks for coding work
 
-When delegating, respond with exactly:
+Delegate to a smart agent if:
+- It requires complex reasoning or analysis WITHOUT file operations
+- It involves working with integrations (Notion, Linear, Gmail)
+- It requires multi-step planning or deep thinking
+
+When delegating to coding agent, respond with exactly:
+CODING: <concise task description for the coding agent>
+
+When delegating to smart agent, respond with exactly:
 DELEGATE: <concise task description for the smart agent>
 
 When handling yourself, just respond normally.`;
@@ -320,8 +328,16 @@ export class AgentOrchestrator {
         },
       });
 
-      const delegateIdx = triageResponse.indexOf("DELEGATE:");
+      // Check for coding delegation first
+      const codingIdx = triageResponse.indexOf("CODING:");
+      if (codingIdx !== -1) {
+        const task = triageResponse.slice(codingIdx + "CODING:".length).trim();
+        onProgress?.({ type: "status", text: "Delegating to coding agent..." });
+        return this.delegateToCoding(task, modeConfig, msg.sender, onProgress);
+      }
 
+      // Check for smart agent delegation
+      const delegateIdx = triageResponse.indexOf("DELEGATE:");
       if (delegateIdx !== -1) {
         const taskDescription = triageResponse.slice(delegateIdx + "DELEGATE:".length).trim();
         onProgress?.({ type: "status", text: "Delegating to smart agent..." });
@@ -345,6 +361,64 @@ export class AgentOrchestrator {
       // If triage fails, try smart agent directly
       onProgress?.({ type: "status", text: "Triage failed, trying smart agent..." });
       return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
+    }
+  }
+
+  /** Delegate work to a coding agent using pi-coding-agent */
+  private async delegateToCoding(
+    task: string,
+    modeConfig: ModeConfig,
+    userId: string,
+    onProgress?: (event: StreamProgressEvent) => void,
+  ): Promise<AgentResponse> {
+    const sessionId = randomUUID().slice(0, 8);
+
+    const session: AgentSession = {
+      id: sessionId,
+      tier: "smart",
+      mode: modeConfig.mode,
+      startedAt: Date.now(),
+      status: "running",
+    };
+
+    this.sessions.set(sessionId, session);
+
+    onProgress?.({ type: "status", text: `Coding: ${task.slice(0, 60)}...` });
+
+    try {
+      const cwd = modeConfig.cwd || process.cwd();
+      const result = await delegateToCodingAgent({
+        task,
+        cwd,
+        modelString: modeConfig.smart.model,
+        authStorage: this.authStorage,
+        onProgress,
+      });
+
+      const sessionManager = this.getSessionManager(userId);
+      sessionManager.appendSession({
+        timestamp: Date.now(),
+        role: "assistant",
+        content: result,
+        usage: {
+          inputTokens: Math.ceil(task.length / 4),
+          outputTokens: Math.ceil(result.length / 4),
+          model: modeConfig.smart.model,
+          cost: calculateCost(modeConfig.smart.model, 500, 300),
+        },
+      });
+
+      session.status = "completed";
+      session.lastUpdate = result;
+      this.emitStatus(sessionId, `Completed: ${result.slice(0, 200)}`);
+
+      return { text: result, metadata: { sessionId } };
+    } catch (err) {
+      console.error(`[orchestrator] Coding agent error:`, err);
+      session.status = "failed";
+      session.lastUpdate = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
+      this.emitStatus(sessionId, session.lastUpdate);
+      throw err;
     }
   }
 

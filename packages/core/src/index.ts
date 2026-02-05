@@ -8,6 +8,7 @@ export {
   parseModelString,
 } from "./pi-session.js";
 export { createCoreTools } from "./tools/core-tools.js";
+export { delegateToCodingAgent } from "./coding-delegate.js";
 export type {
   AgentResponse,
   AgentSession,
