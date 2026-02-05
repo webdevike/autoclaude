@@ -1,0 +1,22 @@
+{
+  "name": "@jarvis/extensions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.52.3",
+    "@sinclair/typebox": "^0.34.48",
+    "googleapis": "^140.0.0",
+    "@linear/sdk": "^33.0.0",
+    "@notionhq/client": "^2.2.15",
+    "exa-js": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
