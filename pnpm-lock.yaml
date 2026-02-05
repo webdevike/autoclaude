@@ -36,9 +36,6 @@ importers:
       '@jarvis/gateway':
         specifier: workspace:*
         version: link:../../gateway
-      grammy:
-        specifier: ^1.30.0
-        version: 1.39.3
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -332,9 +329,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@grammyjs/types@3.23.0':
-    resolution: {integrity: sha512-D3jQ4UWERPsyR3op/YFudMMIPNTU47vy7L51uO9/73tMELmjO/+LX5N36/Y0CG5IQfIsz43MxiHI5rgsK0/k+g==}
 
   '@graphql-typed-document-node/core@3.2.0':
     resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
@@ -651,10 +645,6 @@ packages:
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
-
-  grammy@1.39.3:
-    resolution: {integrity: sha512-7arRRoOtOh9UwMwANZ475kJrWV6P3/EGNooeHlY0/SwZv4t3ZZ3Uiz9cAXK8Zg9xSdgmm8T21kx6n7SZaWvOcw==}
-    engines: {node: ^12.20.0 || >=14.13.1}
 
   graphql@15.10.1:
     resolution: {integrity: sha512-BL/Xd/T9baO6NFzoMpiMD7YUZ62R6viR5tp/MULVEnbYJXZA//kRNW7J0j1w/wXArgL0sCxhDfK5dczSKn3+cg==}
@@ -1085,8 +1075,6 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.2':
     optional: true
-
-  '@grammyjs/types@3.23.0': {}
 
   '@graphql-typed-document-node/core@3.2.0(graphql@15.10.1)':
     dependencies:
@@ -1533,16 +1521,6 @@ snapshots:
       - supports-color
 
   gopd@1.2.0: {}
-
-  grammy@1.39.3:
-    dependencies:
-      '@grammyjs/types': 3.23.0
-      abort-controller: 3.0.0
-      debug: 4.4.3
-      node-fetch: 2.7.0
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
 
   graphql@15.10.1: {}
 
