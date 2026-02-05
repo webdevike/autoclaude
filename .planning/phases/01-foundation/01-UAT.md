@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 01-foundation
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md]
 started: 2026-02-05T12:00:00Z
@@ -57,9 +57,16 @@ skipped: 0
   reason: "User reported: Something went wrong: Telegram API error: Bad Request: message text is empty"
   severity: major
   test: 2
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "Gateway and Telegram channel don't guard against empty response text. When orchestrator returns empty text (triage shows 0 in/0 out tokens), editMessageText fails."
+  artifacts:
+    - path: "packages/gateway/src/index.ts"
+      issue: "Line 162: editMessage called without checking if response.text is empty"
+    - path: "packages/channels/telegram/src/index.ts"
+      issue: "Line 190-199: editMessage doesn't guard against empty text parameter"
+  missing:
+    - "Add empty text guard in gateway before editMessage call"
+    - "Add empty text guard in Telegram editMessage method"
+    - "Investigate why triage returns 0 tokens (pi-ai usage reporting)"
   debug_session: ""
 
 - truth: "When Jarvis uses a tool, see 'Using tool: X...' message in Telegram"
@@ -67,7 +74,7 @@ skipped: 0
   reason: "User reported: Something went wrong: Telegram API error: Bad Request: message text is empty"
   severity: major
   test: 3
-  root_cause: ""
+  root_cause: "Same root cause as Test 2 - empty response text passed to Telegram API"
   artifacts: []
   missing: []
   debug_session: ""
@@ -77,7 +84,7 @@ skipped: 0
   reason: "User reported: [gateway] Error processing message: Telegram API error: Bad Request: message text is empty"
   severity: major
   test: 4
-  root_cause: ""
+  root_cause: "Same root cause as Test 2 - empty response text passed to Telegram API. Session persistence itself may work but can't test due to response failure."
   artifacts: []
   missing: []
   debug_session: ""
