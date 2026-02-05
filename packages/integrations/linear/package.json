@@ -1,0 +1,20 @@
+{
+  "name": "@jarvis/integration-linear",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@jarvis/core": "workspace:*",
+    "@linear/sdk": "^28.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

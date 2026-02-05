@@ -1,14 +1,19 @@
 {
-  "name": "voice-dev-assistant",
+  "name": "jarvis",
+  "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "description": "Personal AI agent with multi-channel messaging, smart delegation, and integrations",
   "scripts": {
-    "dev": "pnpm -r dev",
     "build": "pnpm -r build",
-    "type-check": "pnpm -r type-check"
+    "dev": "pnpm --filter @jarvis/cli dev",
+    "start": "pnpm --filter @jarvis/cli start",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r clean"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
   }
 }

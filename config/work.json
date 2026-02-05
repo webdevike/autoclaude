@@ -1,0 +1,16 @@
+{
+  "mode": "work",
+  "systemPrompt": "You are Jarvis, a work-focused AI assistant. You help with engineering tasks, project management, and team coordination. Be precise and professional.",
+  "triage": {
+    "model": "anthropic/claude-haiku",
+    "maxTokens": 1024
+  },
+  "smart": {
+    "model": "anthropic/claude-sonnet",
+    "maxTokens": 8192
+  },
+  "channels": ["slack"],
+  "integrations": ["linear", "notion", "gmail"],
+  "statusInterval": 600,
+  "crons": []
+}
