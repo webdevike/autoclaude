@@ -29,11 +29,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Token usage and cost tracked per request with daily summaries
   4. Agent sessions persist to disk and survive process restarts
   5. Triage model routes messages based on content and conversation history
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [x] 01-01-PLAN.md -- Replace LLMClient with pi-ai (install pi-ai, rewrite llm.ts, add streaming to gateway with throttled edits)
 - [x] 01-02-PLAN.md -- Replace agent loop with pi-agent-core (rewrite runSmartAgent with Agent class, TypeBox tools, JSONL session persistence, update CLI)
+- [x] 01-03-PLAN.md -- Fix empty message guards (gap closure from UAT)
 
 ### Phase 2: Integrations
 **Goal**: All tools follow pi-mono Extension format and Telegram channel streams agent events
@@ -91,7 +92,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/2 | Complete | 2026-02-05 |
+| 1. Foundation | 3/3 | Complete | 2026-02-05 |
 | 2. Integrations | 0/3 | Not started | - |
 | 3. Intelligence | 0/2 | Not started | - |
 | 4. Autonomy | 0/1 | Not started | - |
