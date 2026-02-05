@@ -67,6 +67,19 @@ export function createAuthStorage(): AuthStorage {
  */
 function createMinimalResourceLoader(systemPrompt: string, extensions: any[] = []): ResourceLoader {
   const runtime = createExtensionRuntime();
+
+  // Initialize extensions - call each factory with runtime
+  for (const ext of extensions) {
+    if (typeof ext === 'function') {
+      try {
+        ext(runtime);
+        console.log('[pi-session] Loaded extension');
+      } catch (err) {
+        console.error('[pi-session] Failed to load extension:', err);
+      }
+    }
+  }
+
   return {
     getExtensions: () => ({ extensions, errors: [], runtime }),
     getSkills: () => ({ skills: [], diagnostics: [] }),
