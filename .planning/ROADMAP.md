@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Replace LLMClient with pi-ai
-- [ ] 01-02: Replace agent loop with pi-agent-core
+- [ ] 01-01-PLAN.md -- Replace LLMClient with pi-ai (install pi-ai, rewrite llm.ts, add streaming to gateway with throttled edits)
+- [ ] 01-02-PLAN.md -- Replace agent loop with pi-agent-core (rewrite runSmartAgent with Agent class, TypeBox tools, JSONL session persistence, update CLI)
 
 ### Phase 2: Integrations
 **Goal**: All tools follow pi-mono Extension format and Telegram channel streams agent events
