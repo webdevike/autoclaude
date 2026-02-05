@@ -11,7 +11,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.51.6"
+    "@mariozechner/pi-agent-core": "^0.52.0",
+    "@mariozechner/pi-ai": "^0.51.6",
+    "@sinclair/typebox": "^0.34.48"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

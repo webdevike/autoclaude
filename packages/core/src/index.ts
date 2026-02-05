@@ -1,6 +1,5 @@
 export { AgentOrchestrator } from "./agent.js";
-export { LLMClient } from "./llm.js";
-export { TmuxManager } from "./tmux.js";
+export { createModel, completeLLM, streamLLM, parseModel } from "./llm.js";
 export type {
   AgentResponse,
   AgentSession,

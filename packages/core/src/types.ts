@@ -1,3 +1,5 @@
+import type { TObject } from '@sinclair/typebox';
+
 export type ModelTier = "triage" | "smart";
 
 export interface ModelConfig {
@@ -56,6 +58,21 @@ export interface ToolDefinition {
   description: string;
   parameters: Record<string, unknown>;
   execute: (params: Record<string, unknown>) => Promise<string>;
+}
+
+export interface ToolDefinitionPiAi {
+  name: string;
+  description: string;
+  parameters: TObject;  // TypeBox schema
+  execute: (params: Record<string, unknown>) => Promise<string>;
+}
+
+export interface SessionEntry {
+  timestamp: number;
+  role: 'user' | 'assistant' | 'tool_result';
+  content: string;
+  toolName?: string;
+  usage?: { inputTokens: number; outputTokens: number; model: string; cost: number };
 }
 
 export interface Integration {
