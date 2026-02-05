@@ -12,7 +12,7 @@ This roadmap transforms Jarvis from a custom-built Telegram bot into a pi-mono-p
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
+- [x] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
 - [ ] **Phase 2: Integrations** - Standardize tools and channels
 - [ ] **Phase 3: Intelligence** - Add persistent memory and mode switching
 - [ ] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Replace LLMClient with pi-ai (install pi-ai, rewrite llm.ts, add streaming to gateway with throttled edits)
-- [ ] 01-02-PLAN.md -- Replace agent loop with pi-agent-core (rewrite runSmartAgent with Agent class, TypeBox tools, JSONL session persistence, update CLI)
+- [x] 01-01-PLAN.md -- Replace LLMClient with pi-ai (install pi-ai, rewrite llm.ts, add streaming to gateway with throttled edits)
+- [x] 01-02-PLAN.md -- Replace agent loop with pi-agent-core (rewrite runSmartAgent with Agent class, TypeBox tools, JSONL session persistence, update CLI)
 
 ### Phase 2: Integrations
 **Goal**: All tools follow pi-mono Extension format and Telegram channel streams agent events
@@ -91,7 +91,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/2 | Not started | - |
+| 1. Foundation | 2/2 | Complete | 2026-02-05 |
 | 2. Integrations | 0/3 | Not started | - |
 | 3. Intelligence | 0/2 | Not started | - |
 | 4. Autonomy | 0/1 | Not started | - |

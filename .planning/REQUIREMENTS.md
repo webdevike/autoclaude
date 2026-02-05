@@ -7,16 +7,16 @@
 
 ### LLM Foundation
 
-- [ ] **LLM-01**: Agent uses pi-ai unified API for all LLM calls with multi-provider support (OpenRouter, Anthropic, OpenAI)
-- [ ] **LLM-02**: Responses stream token-by-token to Telegram (edit message as tokens arrive)
-- [ ] **LLM-03**: Token usage and cost tracked per request, per model tier, with daily/monthly summaries
-- [ ] **LLM-04**: Triage model uses context-aware routing rules (message content, conversation history, active mode) to decide delegation
+- [x] **LLM-01**: Agent uses pi-ai unified API for all LLM calls with multi-provider support (OpenRouter, Anthropic, OpenAI)
+- [x] **LLM-02**: Responses stream token-by-token to Telegram (edit message as tokens arrive)
+- [x] **LLM-03**: Token usage and cost tracked per request, per model tier, with daily/monthly summaries
+- [x] **LLM-04**: Triage model uses context-aware routing rules (message content, conversation history, active mode) to decide delegation
 
 ### Agent Runtime
 
-- [ ] **AGNT-01**: Agent loop powered by pi-agent-core with event-driven execution and no artificial step limits
-- [ ] **AGNT-02**: Tool calls validated via TypeBox schemas before execution
-- [ ] **AGNT-03**: Agent sessions persist to disk (JSONL) and survive process restarts
+- [x] **AGNT-01**: Agent loop powered by pi-agent-core with event-driven execution and no artificial step limits
+- [x] **AGNT-02**: Tool calls validated via TypeBox schemas before execution
+- [x] **AGNT-03**: Agent sessions persist to disk (JSONL) and survive process restarts
 - [ ] **AGNT-04**: Coding tasks delegate to pi-coding-agent running in tmux with full tool access
 
 ### Communication
@@ -80,13 +80,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LLM-01 | Phase 1 | Pending |
-| LLM-02 | Phase 1 | Pending |
-| LLM-03 | Phase 1 | Pending |
-| LLM-04 | Phase 1 | Pending |
-| AGNT-01 | Phase 1 | Pending |
-| AGNT-02 | Phase 1 | Pending |
-| AGNT-03 | Phase 1 | Pending |
+| LLM-01 | Phase 1 | Complete |
+| LLM-02 | Phase 1 | Complete |
+| LLM-03 | Phase 1 | Complete |
+| LLM-04 | Phase 1 | Complete |
+| AGNT-01 | Phase 1 | Complete |
+| AGNT-02 | Phase 1 | Complete |
+| AGNT-03 | Phase 1 | Complete |
 | AGNT-04 | Phase 2 | Pending |
 | COMM-01 | Phase 2 | Pending |
 | COMM-02 | Phase 2 | Pending |
