@@ -9,18 +9,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
-  LLMClient,
-  TmuxManager,
 } from "@jarvis/core";
 import type { ModeConfig, Integration } from "@jarvis/core";
 import { Gateway } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
-import { SlackChannel } from "@jarvis/channel-slack";
+
 import { NotionIntegration } from "@jarvis/integration-notion";
 import { LinearIntegration } from "@jarvis/integration-linear";
 import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
-import { StatusReporter } from "@jarvis/status-reporter";
 
 async function main(): Promise<void> {
   // Load .env from project root
@@ -47,18 +44,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // --- Initialize core ---
-  const llm = new LLMClient(
-    {
-      openrouter: process.env.OPENROUTER_API_KEY,
-      openai: process.env.OPENAI_API_KEY,
-      anthropic: process.env.ANTHROPIC_API_KEY,
-    },
-    "openai", // fallback provider if OpenRouter fails
-  );
+  // --- Set API keys for pi-ai ---
+  if (process.env.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  if (process.env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  if (process.env.OPENROUTER_API_KEY) process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-  const tmux = new TmuxManager();
-  const orchestrator = new AgentOrchestrator(llm, tmux);
+  // --- Initialize core ---
+  const orchestrator = new AgentOrchestrator();
 
   // --- Initialize integrations ---
   const integrations: Integration[] = [
@@ -91,21 +83,6 @@ async function main(): Promise<void> {
     console.warn("[channels] TELEGRAM_BOT_TOKEN not set, Telegram disabled.");
   }
 
-  if (
-    process.env.SLACK_BOT_TOKEN &&
-    process.env.SLACK_APP_TOKEN &&
-    process.env.SLACK_SIGNING_SECRET
-  ) {
-    gateway.registerChannel(
-      new SlackChannel(
-        process.env.SLACK_BOT_TOKEN,
-        process.env.SLACK_APP_TOKEN,
-        process.env.SLACK_SIGNING_SECRET,
-      ),
-    );
-  } else {
-    console.warn("[channels] Slack credentials not set, Slack disabled.");
-  }
 
   // --- Start scheduler ---
   const scheduler = new Scheduler(orchestrator);
@@ -123,18 +100,13 @@ async function main(): Promise<void> {
     execute: async () => JSON.stringify(scheduler.listJobs()),
   });
 
-  // --- Start status reporter ---
-  const activeMode = modes.find((m) => m.mode === defaultMode) ?? modes[0];
-  const channels = Array.from(
-    (gateway as unknown as { channels: Map<string, unknown> }).channels?.values() ?? [],
-  );
+  // Register modes after orchestrator is initialized
+  for (const mode of modes) {
+    orchestrator.registerMode(mode);
+  }
 
-  const reporter = new StatusReporter(orchestrator, tmux, {
-    interval: activeMode.statusInterval ?? 300,
-    channels: channels as import("@jarvis/core").Channel[],
-    recipient: "broadcast",
-  });
-  reporter.start();
+  // Switch to default mode
+  orchestrator.switchMode(defaultMode);
 
   // --- Start gateway ---
   await gateway.start();
@@ -145,13 +117,11 @@ async function main(): Promise<void> {
   // --- Graceful shutdown ---
   const shutdown = async (): Promise<void> => {
     console.log("\nShutting down Jarvis...");
-    reporter.stop();
     scheduler.shutdown();
     await gateway.shutdown();
     for (const integration of integrations) {
       await integration.shutdown();
     }
-    tmux.shutdown();
     process.exit(0);
   };
 

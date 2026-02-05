@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import { Agent } from "@mariozechner/pi-agent-core";
@@ -108,7 +108,8 @@ class SessionManager {
   private compactSession(entries: SessionEntry[]): void {
     const filePath = this.getFilePath();
     const newContent = entries.map(e => JSON.stringify(e)).join("\n") + "\n";
-    appendFileSync(filePath, newContent, "utf-8");
+    // Overwrite the file with compacted entries
+    writeFileSync(filePath, newContent, "utf-8");
   }
 
   getUsageStats(timeRange: "today" | "month"): Record<string, { inputTokens: number; outputTokens: number; cost: number }> {
