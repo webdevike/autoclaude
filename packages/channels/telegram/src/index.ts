@@ -51,8 +51,15 @@ export class TelegramChannel implements Channel {
       chatIdMap.set(sender, String(ctx.chat.id));
     });
 
-    await this.bot.start();
-    console.log("[telegram] Bot started.");
+    // Catch polling errors
+    this.bot.catch((err) => {
+      console.error("[telegram] Bot error:", err.message ?? err);
+    });
+
+    // bot.start() uses long polling and never resolves — fire and forget
+    this.bot.start({
+      onStart: () => console.log("[telegram] Bot started (polling)."),
+    });
   }
 
   async send(recipient: string, text: string): Promise<void> {
