@@ -13,7 +13,7 @@ import {
   SettingsManager,
   type AgentSession,
   type ResourceLoader,
-  createExtensionRuntime,
+  DefaultResourceLoader,
 } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
 import type { StreamProgressEvent } from "./types.js";
@@ -63,35 +63,19 @@ export function createAuthStorage(): AuthStorage {
 }
 
 /**
- * Create a minimal resource loader that sets a system prompt and optional extensions.
+ * Create a resource loader using DefaultResourceLoader with extension factories.
  */
-function createMinimalResourceLoader(systemPrompt: string, extensions: any[] = []): ResourceLoader {
-  const runtime = createExtensionRuntime();
-
-  // Initialize extensions - call each factory with runtime
-  for (const ext of extensions) {
-    if (typeof ext === 'function') {
-      try {
-        ext(runtime);
-        console.log('[pi-session] Loaded extension');
-      } catch (err) {
-        console.error('[pi-session] Failed to load extension:', err);
-      }
-    }
-  }
-
-  return {
-    getExtensions: () => ({ extensions, errors: [], runtime }),
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => systemPrompt,
-    getAppendSystemPrompt: () => [],
-    getPathMetadata: () => new Map(),
-    extendResources: () => {},
-    reload: async () => {},
-  };
+async function createResourceLoader(systemPrompt: string, extensions: any[] = []): Promise<ResourceLoader> {
+  const loader = new DefaultResourceLoader({
+    systemPrompt,
+    extensionFactories: extensions,
+    noExtensions: true,   // Skip file-based extension discovery
+    noSkills: true,       // We don't use skills
+    noPromptTemplates: true, // We don't use prompt templates
+    noThemes: true,       // We don't use themes
+  });
+  await loader.reload();  // This processes extensionFactories into proper Extension objects
+  return loader;
 }
 
 export interface PiSessionConfig {
@@ -134,7 +118,7 @@ export async function createPiSession(config: PiSessionConfig): Promise<PiSessio
     retry: { enabled: true, maxRetries: 3, baseDelayMs: 1000 },
   });
 
-  const resourceLoader = createMinimalResourceLoader(config.systemPrompt, config.extensions);
+  const resourceLoader = await createResourceLoader(config.systemPrompt, config.extensions);
 
   // Convert our CoreToolDefinition to pi-coding-agent's ToolDefinition format
   const customTools = config.tools?.map((tool) => ({
