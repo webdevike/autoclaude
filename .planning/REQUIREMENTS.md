@@ -34,16 +34,16 @@
 
 ### Memory & Configuration
 
-- [ ] **MEMR-01**: User preferences stored as JSON file (tone, verbosity, shortcuts, behavioral rules)
-- [ ] **MEMR-02**: Agent can read and write its own configuration files (mode configs, preferences, tool settings)
-- [ ] **MEMR-03**: Agent confirms with user before persisting a new preference ("Save this preference?")
-- [ ] **MEMR-04**: Conversation history persists across restarts with configurable retention
+- [x] **MEMR-01**: User preferences stored as JSON file (tone, verbosity, shortcuts, behavioral rules)
+- [x] **MEMR-02**: Agent can read and write its own configuration files (mode configs, preferences, tool settings)
+- [x] **MEMR-03**: Agent confirms with user before persisting a new preference ("Save this preference?")
+- [x] **MEMR-04**: Conversation history persists across restarts with configurable retention
 
 ### Modes
 
-- [ ] **MODE-01**: Work and personal modes with separate credentials, system prompts, and enabled integrations
-- [ ] **MODE-02**: User can switch modes on-the-fly via Telegram command without restarting
-- [ ] **MODE-03**: Each mode has configurable response tone and default working directory
+- [x] **MODE-01**: Work and personal modes with separate credentials, system prompts, and enabled integrations
+- [x] **MODE-02**: User can switch modes on-the-fly via Telegram command without restarting
+- [x] **MODE-03**: Each mode has configurable response tone and default working directory
 
 ## v2 Requirements
 
@@ -95,13 +95,13 @@
 | TOOL-02 | Phase 2 | Complete |
 | TOOL-03 | Phase 2 | Complete |
 | TOOL-04 | Phase 2 | Complete |
-| MEMR-01 | Phase 3 | Pending |
-| MEMR-02 | Phase 3 | Pending |
-| MEMR-03 | Phase 3 | Pending |
-| MEMR-04 | Phase 3 | Pending |
-| MODE-01 | Phase 3 | Pending |
-| MODE-02 | Phase 3 | Pending |
-| MODE-03 | Phase 3 | Pending |
+| MEMR-01 | Phase 3 | Complete |
+| MEMR-02 | Phase 3 | Complete |
+| MEMR-03 | Phase 3 | Complete |
+| MEMR-04 | Phase 3 | Complete |
+| MODE-01 | Phase 3 | Complete |
+| MODE-02 | Phase 3 | Complete |
+| MODE-03 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total
@@ -110,4 +110,4 @@
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-05 after roadmap creation*
+*Last updated: 2026-02-06 after Phase 3 completion*

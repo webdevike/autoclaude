@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
 - [x] **Phase 2: Integrations** - Standardize tools and channels
-- [ ] **Phase 3: Intelligence** - Add persistent memory and mode switching
+- [x] **Phase 3: Intelligence** - Add persistent memory and mode switching
 - [ ] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
 
 ## Phase Details
@@ -68,8 +68,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Add persistent preferences (PreferencesManager with TypeBox validation, config tools, system prompt injection)
-- [ ] 03-02-PLAN.md -- Enable dynamic mode switching (retention policy, hot-reload mode configs, work mode config)
+- [x] 03-01-PLAN.md -- Add persistent preferences (PreferencesManager with TypeBox validation, config tools, system prompt injection)
+- [x] 03-02-PLAN.md -- Enable dynamic mode switching (retention policy, hot-reload mode configs, work mode config)
 
 ### Phase 4: Autonomy
 **Goal**: Agent manages its own configuration and schedules, extending itself as needed
@@ -95,5 +95,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-02-05 |
 | 2. Integrations | 5/5 | Complete | 2026-02-06 |
-| 3. Intelligence | 0/2 | Not started | - |
+| 3. Intelligence | 2/2 | Complete | 2026-02-06 |
 | 4. Autonomy | 0/1 | Not started | - |
