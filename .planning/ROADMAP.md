@@ -68,8 +68,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Add persistent preferences
-- [ ] 03-02: Enable dynamic mode switching
+- [ ] 03-01-PLAN.md -- Add persistent preferences (PreferencesManager with TypeBox validation, config tools, system prompt injection)
+- [ ] 03-02-PLAN.md -- Enable dynamic mode switching (retention policy, hot-reload mode configs, work mode config)
 
 ### Phase 4: Autonomy
 **Goal**: Agent manages its own configuration and schedules, extending itself as needed
