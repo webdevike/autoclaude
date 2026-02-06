@@ -84,7 +84,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 04-01: Add self-configuration tools
+- [ ] 04-01-PLAN.md -- Add self-configuration tools (CronScheduler, ConfigManager with git audit, 6 autonomy tools with confirmation flow)
 
 ## Progress
 
