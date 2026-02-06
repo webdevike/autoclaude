@@ -524,9 +524,19 @@ export class AgentOrchestrator {
       .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
       .join("\n");
 
+    // Apply working directory from mode config
+    const cwd = modeConfig.cwd || process.cwd();
+    if (modeConfig.cwd) {
+      if (existsSync(modeConfig.cwd)) {
+        process.env.AGENT_CWD = modeConfig.cwd;
+        console.log(`[mode] Working directory: ${modeConfig.cwd}`);
+      } else {
+        console.warn(`[mode] Configured cwd does not exist: ${modeConfig.cwd}`);
+      }
+    }
+
     // Fast routing: skip triage for obvious intents
     const fastRouteResult = fastRoute(msg.text);
-    const cwd = modeConfig.cwd || process.cwd();
 
     if (fastRouteResult === "coding") {
       console.log(`[orchestrator] Fast route: coding`);
