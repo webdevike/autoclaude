@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-05)
 
 ## Current Position
 
-Phase: 2 of 4 (Integrations) — COMPLETE
-Plan: 5 of 5 in current phase
-Status: Phase complete with gap closure
-Last activity: 2026-02-06 — Completed 02-05-PLAN.md (Gap Closure - Extension Loading Fix)
+Phase: 3 of 4 (Intelligence) — IN PROGRESS
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-06 — Completed 03-01-PLAN.md (Persistent User Preferences)
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: 2.5 minutes
-- Total execution time: 0.33 hours
+- Total plans completed: 9
+- Average duration: 2.8 minutes
+- Total execution time: 0.42 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [████████░░] 75%
 |-------|-------|-------|----------|
 | 01-foundation | 3/3 | 10 min | 3.3 min |
 | 02-integrations | 5/5 | 11 min | 2.2 min |
+| 03-intelligence | 1/3 | 4 min | 4.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (3 min), 02-03 (3 min), 02-04 (2 min), 02-05 (2 min)
-- Trend: Consistent ~2-3 min execution across Phase 2
+- Last 5 plans: 02-03 (3 min), 02-04 (2 min), 02-05 (2 min), 03-01 (4 min)
+- Trend: Fast execution maintained, slight increase for Phase 3 complexity
 
 *Updated after each plan completion*
 
@@ -91,6 +92,14 @@ Recent decisions affecting current work:
 - DefaultResourceLoader for extensions: Use DefaultResourceLoader with extensionFactories option instead of manual createExtensionRuntime (creates proper Extension objects with tools/handlers Maps)
 - session_start event emission: Call session.bindExtensions({}) after session creation to trigger extension lifecycle handlers that initialize API clients
 
+**From Plan 03-01:**
+- TypeBox schema with additionalProperties: false: Reject unknown keys to prevent pollution of preferences file
+- Atomic writes via temp file + fs.renameSync: POSIX atomic operation prevents file corruption on crashes
+- Confirmation flow for set_preference: confirmed=false returns prompt, confirmed=true saves (prevents accidental preference changes)
+- Dangerous pattern validation: validatePreferenceValue() rejects shell commands, template literals, script injection, non-https URLs
+- System prompt injection: Preferences (tone, verbosity, behavioral rules) added to system prompt in runSmartAgent()
+- Size warning at 100KB: Log warning if preferences file exceeds threshold (early detection of bloat)
+
 ### Pending Todos
 
 None yet.
@@ -101,6 +110,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-06 02:17 UTC
-Stopped at: Completed 02-05-PLAN.md (Gap Closure - Extension Loading Fix)
+Last session: 2026-02-06 19:50 UTC
+Stopped at: Completed 03-01-PLAN.md (Persistent User Preferences)
 Resume file: None
