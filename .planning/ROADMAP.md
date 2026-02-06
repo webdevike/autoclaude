@@ -13,7 +13,7 @@ This roadmap transforms Jarvis from a custom-built Telegram bot into a pi-mono-p
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
-- [ ] **Phase 2: Integrations** - Standardize tools and channels
+- [x] **Phase 2: Integrations** - Standardize tools and channels
 - [ ] **Phase 3: Intelligence** - Add persistent memory and mode switching
 - [ ] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
 
@@ -52,7 +52,7 @@ Plans:
 - [x] 02-02-PLAN.md -- Convert Gmail, Linear, Notion to Extensions + add Exa web search
 - [x] 02-03-PLAN.md -- Integrate pi-coding-agent for coding task delegation with tmux visibility
 - [x] 02-04-PLAN.md -- Gap closure: Initialize extensions + fix tmux cleanup
-- [ ] 02-05-PLAN.md -- Gap closure: Fix extension loading (DefaultResourceLoader) + session_start emission
+- [x] 02-05-PLAN.md -- Gap closure: Fix extension loading (DefaultResourceLoader) + session_start emission
 
 ### Phase 3: Intelligence
 **Goal**: Agent remembers user preferences and switches modes on-the-fly
@@ -94,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-02-05 |
-| 2. Integrations | 4/5 | Gap closure | - |
+| 2. Integrations | 5/5 | Complete | 2026-02-06 |
 | 3. Intelligence | 0/2 | Not started | - |
 | 4. Autonomy | 0/1 | Not started | - |
