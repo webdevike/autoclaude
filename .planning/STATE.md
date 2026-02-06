@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-05)
 ## Current Position
 
 Phase: 3 of 4 (Intelligence) — IN PROGRESS
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-06 — Completed 03-01-PLAN.md (Persistent User Preferences)
+Last activity: 2026-02-06 — Completed 03-02-PLAN.md (Dynamic Mode Switching & History Retention)
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
-- Average duration: 2.8 minutes
-- Total execution time: 0.42 hours
+- Total plans completed: 10
+- Average duration: 2.9 minutes
+- Total execution time: 0.49 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [████████░░] 81%
 |-------|-------|-------|----------|
 | 01-foundation | 3/3 | 10 min | 3.3 min |
 | 02-integrations | 5/5 | 11 min | 2.2 min |
-| 03-intelligence | 1/3 | 4 min | 4.0 min |
+| 03-intelligence | 2/3 | 8 min | 4.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03 (3 min), 02-04 (2 min), 02-05 (2 min), 03-01 (4 min)
-- Trend: Fast execution maintained, slight increase for Phase 3 complexity
+- Last 5 plans: 02-04 (2 min), 02-05 (2 min), 03-01 (4 min), 03-02 (4 min)
+- Trend: Consistent 4-minute execution for Phase 3 plans
 
 *Updated after each plan completion*
 
@@ -100,6 +100,14 @@ Recent decisions affecting current work:
 - System prompt injection: Preferences (tone, verbosity, behavioral rules) added to system prompt in runSmartAgent()
 - Size warning at 100KB: Log warning if preferences file exceeds threshold (early detection of bloat)
 
+**From Plan 03-02:**
+- Retention policy defaults: 50 max messages, 30 days max age, 10 min messages (prevents unbounded conversation history)
+- Mode switch always reloads configs from disk: Enables hot-reload without gateway restart
+- Environment variable substitution: ${VAR_NAME} syntax in config files (e.g., cwd field)
+- AGENT_CWD environment variable: Set from mode config cwd for working directory context
+- Work mode distinctions: Professional tone, linear+gmail integrations, /home/ike/workspace cwd (vs personal's casual tone, notion+gmail)
+- Session-locked config: Mode config captured at start of handleMessage(), no mid-session switches
+
 ### Pending Todos
 
 None yet.
@@ -110,6 +118,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-06 19:50 UTC
-Stopped at: Completed 03-01-PLAN.md (Persistent User Preferences)
+Last session: 2026-02-06 19:58 UTC
+Stopped at: Completed 03-02-PLAN.md (Dynamic Mode Switching & History Retention)
 Resume file: None
