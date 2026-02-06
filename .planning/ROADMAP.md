@@ -13,7 +13,7 @@ This roadmap transforms Jarvis from a custom-built Telegram bot into a pi-mono-p
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
-- [x] **Phase 2: Integrations** - Standardize tools and channels
+- [ ] **Phase 2: Integrations** - Standardize tools and channels
 - [ ] **Phase 3: Intelligence** - Add persistent memory and mode switching
 - [ ] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
 
@@ -45,13 +45,14 @@ Plans:
   1. Agent has 4 core tools (Read, Write, Edit, Bash) from pi-mono
   2. Gmail, Linear, Notion, and Exa available as hot-reloadable Extensions
   3. Coding tasks delegate to pi-coding-agent running in tmux
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 - [x] 02-01-PLAN.md -- Add core coding tools (Read, Write, Edit, Bash) with TypeBox schemas
 - [x] 02-02-PLAN.md -- Convert Gmail, Linear, Notion to Extensions + add Exa web search
 - [x] 02-03-PLAN.md -- Integrate pi-coding-agent for coding task delegation with tmux visibility
 - [x] 02-04-PLAN.md -- Gap closure: Initialize extensions + fix tmux cleanup
+- [ ] 02-05-PLAN.md -- Gap closure: Fix extension loading (DefaultResourceLoader) + session_start emission
 
 ### Phase 3: Intelligence
 **Goal**: Agent remembers user preferences and switches modes on-the-fly
@@ -93,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-02-05 |
-| 2. Integrations | 4/4 | Complete | 2026-02-05 |
+| 2. Integrations | 4/5 | Gap closure | - |
 | 3. Intelligence | 0/2 | Not started | - |
 | 4. Autonomy | 0/1 | Not started | - |
