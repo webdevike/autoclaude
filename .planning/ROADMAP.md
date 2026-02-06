@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation** - Migrate to pi-mono (LLM + agent runtime)
 - [x] **Phase 2: Integrations** - Standardize tools and channels
 - [x] **Phase 3: Intelligence** - Add persistent memory and mode switching
-- [ ] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
+- [x] **Phase 4: Autonomy** - Enable self-configuration and coding delegation
 
 ## Phase Details
 
@@ -84,7 +84,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 04-01-PLAN.md -- Add self-configuration tools (CronScheduler, ConfigManager with git audit, 6 autonomy tools with confirmation flow)
+- [x] 04-01-PLAN.md -- Add self-configuration tools (CronScheduler, ConfigManager with git audit, 6 autonomy tools with confirmation flow)
 
 ## Progress
 
@@ -96,4 +96,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Foundation | 3/3 | Complete | 2026-02-05 |
 | 2. Integrations | 5/5 | Complete | 2026-02-06 |
 | 3. Intelligence | 2/2 | Complete | 2026-02-06 |
-| 4. Autonomy | 0/1 | Not started | - |
+| 4. Autonomy | 1/1 | Complete | 2026-02-06 |
