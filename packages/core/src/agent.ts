@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import type { AgentSession as PiAgentSession } from "@mariozechner/pi-coding-agent";
@@ -356,9 +356,14 @@ export class AgentOrchestrator {
   private onStatusUpdate?: (update: StatusUpdate) => void;
   private sessionManagers: Map<string, SessionManager> = new Map();
   private preferencesManagers: Map<string, PreferencesManager> = new Map();
+  private configDir: string;
 
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
+
+  constructor(configDir?: string) {
+    this.configDir = configDir || resolve(process.cwd(), "config");
+  }
 
   setStatusHandler(handler: (update: StatusUpdate) => void): void {
     this.onStatusUpdate = handler;
@@ -372,12 +377,74 @@ export class AgentOrchestrator {
     return this.activeMode;
   }
 
-  switchMode(mode: string): ModeConfig | null {
+  /** Load all mode configs from disk */
+  private loadAllModes(): void {
+    if (!existsSync(this.configDir)) {
+      console.warn(`[orchestrator] Config directory not found: ${this.configDir}`);
+      return;
+    }
+
+    const files = readdirSync(this.configDir).filter(f => f.endsWith(".json"));
+
+    for (const file of files) {
+      try {
+        const filePath = resolve(this.configDir, file);
+        const content = readFileSync(filePath, "utf-8");
+        const config = JSON.parse(content) as ModeConfig;
+
+        // Handle cwd environment variable substitution
+        if (config.cwd) {
+          config.cwd = config.cwd.replace(/\$\{([^}]+)\}/g, (_, varName) => {
+            return process.env[varName] || config.cwd!;
+          });
+        }
+
+        this.modes.set(config.mode, config);
+        console.log(`[orchestrator] Loaded mode: ${config.mode} from ${file}`);
+      } catch (err) {
+        console.error(`[orchestrator] Failed to load ${file}:`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
+  /** Reload all modes from disk (for dynamic config updates) */
+  reloadModes(): void {
+    console.log(`[orchestrator] Reloading modes from ${this.configDir}`);
+    this.modes.clear();
+    this.loadAllModes();
+  }
+
+  /** Get list of available mode names */
+  getAvailableModes(): string[] {
+    return Array.from(this.modes.keys());
+  }
+
+  /** Get current mode's configuration */
+  getCurrentModeConfig(): ModeConfig | null {
+    return this.modes.get(this.activeMode) ?? null;
+  }
+
+  /** Switch to a different mode, reloading configs first */
+  switchMode(mode: string): { success: boolean; message: string; config?: ModeConfig } {
+    // Reload configs from disk to pick up any changes
+    this.reloadModes();
+
     const config = this.modes.get(mode);
     if (config) {
       this.activeMode = mode;
+      const availableModes = this.getAvailableModes();
+      return {
+        success: true,
+        message: `Switched to ${mode} mode.\n\nIntegrations: ${config.integrations.join(", ")}\nTone: ${config.tone || "default"}`,
+        config,
+      };
     }
-    return config ?? null;
+
+    const availableModes = this.getAvailableModes();
+    return {
+      success: false,
+      message: `Mode "${mode}" not found.\n\nAvailable modes: ${availableModes.join(", ")}`,
+    };
   }
 
   registerTool(tool: ToolDefinition): void {
@@ -773,19 +840,21 @@ export class AgentOrchestrator {
     const trimmed = text.trim();
 
     if (trimmed === "/mode" || trimmed === "/modes") {
-      const modes = Array.from(this.modes.keys());
-      return {
-        text: `Active mode: ${this.activeMode}\nAvailable: ${modes.join(", ")}`,
-      };
+      const currentConfig = this.getCurrentModeConfig();
+      const modes = this.getAvailableModes();
+      let response = `Active mode: ${this.activeMode}\nAvailable modes: ${modes.join(", ")}`;
+
+      if (currentConfig) {
+        response += `\n\nCurrent mode details:\n- Integrations: ${currentConfig.integrations.join(", ")}\n- Tone: ${currentConfig.tone || "default"}`;
+      }
+
+      return { text: response };
     }
 
     if (trimmed.startsWith("/mode ")) {
       const newMode = trimmed.slice(6).trim();
-      const config = this.switchMode(newMode);
-      if (config) {
-        return { text: `Switched to ${newMode} mode.` };
-      }
-      return { text: `Unknown mode: ${newMode}` };
+      const result = this.switchMode(newMode);
+      return { text: result.message };
     }
 
     if (trimmed === "/sessions") {

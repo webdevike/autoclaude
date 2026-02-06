@@ -11,6 +11,7 @@ export interface ModelConfig {
 export interface ModeConfig {
   mode: string;
   systemPrompt: string;
+  tone?: string; // optional tone setting (e.g., "casual", "professional")
   triage: ModelConfig;
   smart: ModelConfig;
   channels: string[];

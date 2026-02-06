@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   if (process.env.OPENROUTER_API_KEY) process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
   // --- Initialize core ---
-  const orchestrator = new AgentOrchestrator();
+  const orchestrator = new AgentOrchestrator(configDir);
 
   // --- Initialize integrations ---
   const integrations: Integration[] = [
