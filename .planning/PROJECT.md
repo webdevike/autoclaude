@@ -2,39 +2,49 @@
 
 ## What This Is
 
-A self-hosted personal AI assistant accessible via Telegram, built on top of pi-mono's agent framework. A triage model (cheap/fast) handles quick interactions and delegates complex tasks — coding, research, multi-step workflows — to smarter models. Integrates with Gmail, Linear, Notion, and Exa web search, with a persistent preference system that lets the agent learn and configure itself over time.
+A self-hosted personal AI assistant accessible via Telegram, built on pi-mono's agent framework. A triage model (cheap/fast) handles quick interactions and delegates complex tasks — coding, research, multi-step workflows — to smarter models. Integrates with Gmail, Linear, Notion, and Exa web search, with a persistent preference system that lets the agent learn and configure itself over time.
 
 ## Core Value
 
 A single Telegram interface that intelligently routes between fast responses and deep work, so I never have to context-switch between tools.
 
+## Current State (v1.0 shipped)
+
+**Shipped:** 2026-02-06
+**Codebase:** ~2,500 lines TypeScript, pi-mono foundation
+**Deployed:** VPS srv1312265 via Tailscale
+
+**What works:**
+- Pi-ai unified LLM with 20+ providers, streaming, cost tracking
+- Pi-agent-core event-driven loop with TypeBox validation
+- Gmail, Linear, Notion, Exa as hot-reloadable Extensions
+- Pi-coding-agent delegation in visible tmux sessions
+- Persistent preferences with confirmation flow
+- Dynamic mode switching via /mode command
+- Self-configuration tools (cron scheduling, config modification, shortcuts)
+
+**Known limitations:**
+- CronScheduler.executeJob() is a stub — jobs schedule but don't execute prompts
+
 ## Requirements
 
-### Validated
+### Validated (v1.0)
 
-- ✓ Two-tier LLM delegation (triage → smart) — existing
-- ✓ Telegram channel with polling — existing
-- ✓ Gmail integration (read/send/manage) — existing
-- ✓ Linear integration (issues, projects) — existing
-- ✓ Notion integration (search, read, create) — existing
-- ✓ Mode system (personal/work configs) — existing
-- ✓ Tmux-based process isolation for smart agent sessions — existing
-- ✓ Cron-based scheduled tasks — existing
-- ✓ Status reporting on running sessions — existing
-- ✓ Docker deployment support — existing
+- ✓ Pi-ai unified API for all LLM calls (multi-provider, streaming, cost tracking) — v1.0
+- ✓ Token-by-token streaming to Telegram with throttled edits — v1.0
+- ✓ Pi-agent-core event-driven agent loop with TypeBox validation — v1.0
+- ✓ JSONL session persistence surviving restarts — v1.0
+- ✓ Context-aware triage routing — v1.0
+- ✓ Gmail, Linear, Notion, Exa as Extensions — v1.0
+- ✓ Pi-coding-agent delegation in tmux — v1.0
+- ✓ Persistent preferences with confirmation flow — v1.0
+- ✓ Dynamic mode switching via Telegram — v1.0
+- ✓ Self-configuration tools (cron, config, shortcuts) — v1.0
 
 ### Active
 
-- [ ] Migrate LLM layer to pi-ai (unified multi-provider API, streaming, token tracking)
-- [ ] Migrate agent loop to pi-agent-core (event-driven, tool validation, no artificial step limits)
-- [ ] Integrate pi-coding-agent as the smart delegate for coding tasks
-- [ ] Smarter triage routing (context-aware delegation rules, not just DELEGATE: prefix)
-- [ ] On-the-fly mode switching via Telegram (not just env var)
-- [ ] Persistent preference system (agent stores and applies user preferences)
-- [ ] Self-configuring agent (can read/write its own config files, add tool shortcuts)
-- [ ] Exa web search integration
-- [ ] Per-mode credentials (different API keys, working directories, tone per mode)
-- [ ] Simplified monorepo structure (fewer packages, less abstraction)
+- [ ] Cron job execution (connect CronScheduler to AgentOrchestrator)
+- [ ] Proactive notifications (morning briefing, deadline reminders)
 
 ### Out of Scope
 
@@ -47,34 +57,32 @@ A single Telegram interface that intelligently routes between fast responses and
 
 ## Context
 
-**Existing codebase:** Jarvis monorepo (`@jarvis/*` packages) with working Telegram bot, Gmail/Linear/Notion integrations, two-tier triage/delegate model, tmux sessions, cron scheduler. Already deployed on VPS (srv1312265 via Tailscale at 100.111.3.40).
+**Codebase:** Jarvis monorepo (`@jarvis/*` packages) with pi-mono foundation. Deployed on VPS (srv1312265 via Tailscale at 100.111.3.40).
 
-**OpenClaw experience:** Currently running OpenClaw v2026.1.29 on the same VPS. Works but want full ownership and control — ability to customize deeply without hitting walls. OpenClaw uses pi-mono under the hood; this project adopts the same foundation directly.
-
-**Pi-mono foundation:** Using `@mariozechner/pi-ai` for LLM abstraction (multi-provider, streaming, tool calling with TypeBox schemas, cost tracking) and `@mariozechner/pi-agent-core` for the agent loop (event-driven, tool execution/validation). Pi-coding-agent available as the smart coding delegate.
-
-**Deployment target:** Self-hosted VPS, systemd service, Tailscale network. Same server currently running OpenClaw.
+**Pi-mono foundation:** Using `@mariozechner/pi-ai` for LLM abstraction and `@mariozechner/pi-agent-core` for the agent loop. Pi-coding-agent as the smart coding delegate.
 
 **Daily workflow:** Mix of quick checks ("check email", "what's on Linear") and delegated tasks ("write this code", "draft this email", "do a web search for xyz"). Work mode focuses on Linear + Notion + coding. Personal mode focuses on Gmail + web search + general assistance.
 
 ## Constraints
 
-- **Tech stack**: TypeScript, pi-mono packages, pnpm monorepo — same ecosystem as current codebase
-- **Hosting**: Single VPS (srv1312265), must coexist with or replace OpenClaw
-- **LLM providers**: OpenRouter primary, Anthropic/OpenAI as fallbacks — existing API keys
-- **Interface**: Telegram only — all interaction through single bot
+- **Tech stack**: TypeScript, pi-mono packages, pnpm monorepo
+- **Hosting**: Single VPS (srv1312265), Tailscale network
+- **LLM providers**: OpenRouter primary, Anthropic/OpenAI as fallbacks
+- **Interface**: Telegram only
 - **Runtime**: Node.js 22+, tmux required for process isolation
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Use pi-mono (pi-ai + pi-agent-core) instead of custom LLM/agent code | Battle-tested, multi-provider, streaming, token tracking — no point maintaining custom versions | — Pending |
-| Pi-coding-agent as smart coding delegate | Already proven in OpenClaw, handles coding tasks well with 4 core tools | — Pending |
-| Exa for web search | Already configured on VPS for OpenClaw, includes image support | — Pending |
-| Persistent preferences as JSON files | Simple, agent can read/write, version-controllable, no database needed | — Pending |
-| Keep Telegram as sole interface | Minimal surface area, accessible from any device, push notifications built in | — Pending |
-| Gmail personal only | Can't OAuth work email, personal Gmail already configured with GCP project | — Pending |
+| Use pi-mono (pi-ai + pi-agent-core) instead of custom LLM/agent code | Battle-tested, multi-provider, streaming, token tracking | ✓ Good — eliminates custom code, adds 20+ providers |
+| Pi-coding-agent as smart coding delegate | Already proven in OpenClaw, handles coding tasks well with 4 core tools | ✓ Good — visible tmux sessions, full tool access |
+| Exa for web search | Already configured on VPS for OpenClaw, includes image support | ✓ Good — working Extension |
+| Persistent preferences as JSON files | Simple, agent can read/write, version-controllable, no database needed | ✓ Good — atomic writes, TypeBox validation |
+| Confirmation flow for config changes | Prevents accidental agent modifications | ✓ Good — consistent pattern across tools |
+| Extension API for integrations | Lifecycle management, hot-reload potential | ✓ Good — clean separation |
+| Keep Telegram as sole interface | Minimal surface area, accessible from any device, push notifications built in | ✓ Good — works well |
+| Gmail personal only | Can't OAuth work email, personal Gmail already configured with GCP project | — Accepted limitation |
 
 ---
-*Last updated: 2026-02-05 after initialization*
+*Last updated: 2026-02-06 after v1.0 milestone*
