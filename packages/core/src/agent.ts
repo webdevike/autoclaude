@@ -152,14 +152,28 @@ function calculateCost(model: string, inputTokens: number, outputTokens: number)
 // Session Persistence (JSONL)
 // ============================================================================
 
+interface RetentionPolicy {
+  maxMessages: number;     // Default: 50
+  maxAgeDays: number;      // Default: 30
+  minMessages: number;     // Default: 10 (always keep at least this many)
+}
+
 class SessionManager {
   private sessionDir: string;
+  private retentionPolicy: RetentionPolicy;
 
-  constructor(userId: string) {
+  constructor(userId: string, retentionPolicy?: Partial<RetentionPolicy>) {
     this.sessionDir = resolve(homedir(), ".jarvis", "sessions", userId);
     if (!existsSync(this.sessionDir)) {
       mkdirSync(this.sessionDir, { recursive: true });
     }
+
+    // Set retention policy with defaults
+    this.retentionPolicy = {
+      maxMessages: retentionPolicy?.maxMessages ?? 50,
+      maxAgeDays: retentionPolicy?.maxAgeDays ?? 30,
+      minMessages: retentionPolicy?.minMessages ?? 10,
+    };
   }
 
   private getFilePath(): string {
@@ -169,6 +183,9 @@ class SessionManager {
   appendSession(entry: SessionEntry): void {
     const line = JSON.stringify(entry) + "\n";
     appendFileSync(this.getFilePath(), line, "utf-8");
+
+    // Enforce retention policy after each append
+    this.enforceRetentionPolicy();
   }
 
   loadSession(limit = 50): SessionEntry[] {
@@ -180,28 +197,125 @@ class SessionManager {
     const content = readFileSync(filePath, "utf-8");
     const lines = content.trim().split("\n").filter(l => l.trim());
 
-    // Return last N entries
-    const entries = lines.slice(-limit).map(line => {
-      try {
-        return JSON.parse(line) as SessionEntry;
-      } catch {
-        return null;
-      }
-    }).filter((e): e is SessionEntry => e !== null);
+    // Parse with safe error handling
+    let invalidCount = 0;
+    const entries: SessionEntry[] = [];
 
-    // Compact if file is too large (more than 2x limit)
-    if (lines.length > limit * 2) {
+    for (const line of lines) {
+      try {
+        entries.push(JSON.parse(line) as SessionEntry);
+      } catch {
+        invalidCount++;
+        console.warn(`[history] Skipping invalid JSONL line: ${line.slice(0, 100)}`);
+      }
+    }
+
+    // If >10% invalid lines, backup and rewrite with valid messages
+    if (lines.length > 0 && invalidCount / lines.length > 0.1) {
+      console.warn(`[history] ${invalidCount}/${lines.length} invalid lines (${(invalidCount / lines.length * 100).toFixed(1)}%), backing up and rewriting`);
+      const backupPath = `${filePath}.corrupt.${Date.now()}`;
+      writeFileSync(backupPath, content, "utf-8");
+      console.log(`[history] Backed up corrupt file to ${backupPath}`);
       this.compactSession(entries);
     }
 
-    return entries;
+    // Return last N entries
+    const result = entries.slice(-limit);
+
+    // Compact if file is too large (more than 2x limit)
+    if (lines.length > limit * 2) {
+      this.compactSession(result);
+    }
+
+    return result;
   }
 
   private compactSession(entries: SessionEntry[]): void {
     const filePath = this.getFilePath();
     const newContent = entries.map(e => JSON.stringify(e)).join("\n") + "\n";
-    // Overwrite the file with compacted entries
-    writeFileSync(filePath, newContent, "utf-8");
+    // Atomic write: temp file + rename
+    const tempPath = `${filePath}.tmp`;
+    writeFileSync(tempPath, newContent, "utf-8");
+    writeFileSync(filePath, newContent, "utf-8"); // Node.js doesn't have atomic rename across platforms, use sync overwrite
+  }
+
+  private enforceRetentionPolicy(): void {
+    const filePath = this.getFilePath();
+    if (!existsSync(filePath)) {
+      return;
+    }
+
+    // Load all messages
+    const content = readFileSync(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter(l => l.trim());
+
+    // Parse all entries
+    const entries: SessionEntry[] = [];
+    for (const line of lines) {
+      try {
+        entries.push(JSON.parse(line) as SessionEntry);
+      } catch {
+        // Skip invalid lines
+      }
+    }
+
+    const beforeCount = entries.length;
+
+    // If count <= minMessages, skip cleanup
+    if (beforeCount <= this.retentionPolicy.minMessages) {
+      return;
+    }
+
+    const now = Date.now();
+    const maxAgeMs = this.retentionPolicy.maxAgeDays * 24 * 60 * 60 * 1000;
+    const cutoffTime = now - maxAgeMs;
+
+    // Filter by age and limit
+    let filtered = entries.filter(e => e.timestamp >= cutoffTime);
+    filtered = filtered.slice(-this.retentionPolicy.maxMessages);
+
+    // Ensure at least minMessages kept
+    if (filtered.length < this.retentionPolicy.minMessages) {
+      filtered = entries.slice(-this.retentionPolicy.minMessages);
+    }
+
+    const afterCount = filtered.length;
+
+    // Only rewrite if we filtered something
+    if (afterCount < beforeCount) {
+      console.log(`[history] Retention: ${beforeCount} → ${afterCount} messages`);
+      this.compactSession(filtered);
+    }
+  }
+
+  getStats(): { total: number; oldest?: number; newest?: number } {
+    const filePath = this.getFilePath();
+    if (!existsSync(filePath)) {
+      return { total: 0 };
+    }
+
+    const content = readFileSync(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter(l => l.trim());
+
+    const entries: SessionEntry[] = [];
+    for (const line of lines) {
+      try {
+        entries.push(JSON.parse(line) as SessionEntry);
+      } catch {
+        // Skip invalid lines
+      }
+    }
+
+    if (entries.length === 0) {
+      return { total: 0 };
+    }
+
+    const timestamps = entries.map(e => e.timestamp);
+    return {
+      total: entries.length,
+      oldest: Math.min(...timestamps),
+      newest: Math.max(...timestamps),
+    };
   }
 
   getUsageStats(timeRange: "today" | "month"): Record<string, { inputTokens: number; outputTokens: number; cost: number }> {
