@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-05)
 
 ## Current Position
 
-Phase: 3 of 4 (Intelligence) — COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase complete, verified
-Last activity: 2026-02-06 — Phase 3 verified, all 6 success criteria passed
+Phase: 4 of 4 (Autonomy) — IN PROGRESS
+Plan: 1 of 2 in current phase
+Status: Plan 04-01 complete
+Last activity: 2026-02-06 — Completed 04-01-PLAN.md (Self-Configuration Tools)
 
-Progress: [█████████░] 90%
+Progress: [█████████▓] 92%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 2.9 minutes
-- Total execution time: 0.49 hours
+- Total plans completed: 11
+- Average duration: 3.5 minutes
+- Total execution time: 0.65 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [█████████░] 90%
 | 01-foundation | 3/3 | 10 min | 3.3 min |
 | 02-integrations | 5/5 | 11 min | 2.2 min |
 | 03-intelligence | 2/2 | 8 min | 4.0 min |
+| 04-autonomy | 1/2 | 10 min | 10.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-04 (2 min), 02-05 (2 min), 03-01 (4 min), 03-02 (4 min)
-- Trend: Consistent 4-minute execution for Phase 3 plans
+- Last 5 plans: 02-05 (2 min), 03-01 (4 min), 03-02 (4 min), 04-01 (10 min)
+- Trend: Phase 4 plan took longer due to new infrastructure (CronScheduler, ConfigManager)
 
 *Updated after each plan completion*
 
@@ -108,6 +109,14 @@ Recent decisions affecting current work:
 - Work mode distinctions: Professional tone, linear+gmail integrations, /home/ike/workspace cwd (vs personal's casual tone, notion+gmail)
 - Session-locked config: Mode config captured at start of handleMessage(), no mid-session switches
 
+**From Plan 04-01:**
+- In-process cron scheduling: Use node-cron instead of external cron (simpler deployment, no system dependencies)
+- Confirmation flow for all config changes: Prevents accidental agent modifications, matches config-tools pattern
+- Best-effort git commits: Log config changes but don't block operations on git failures
+- Whitelist for update_mode_config: Only safe fields modifiable (systemPrompt, tone, integrations, statusInterval, cwd)
+- 500-char limit for cron prompts: Prevents injection attacks and unreasonably complex tasks
+- Atomic config writes: Temp file + rename prevents corruption on crashes
+
 ### Pending Todos
 
 None yet.
@@ -118,6 +127,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-06 20:15 UTC
-Stopped at: Phase 3 Intelligence verified and complete
+Last session: 2026-02-06 20:44 UTC
+Stopped at: Completed 04-01-PLAN.md (Self-Configuration Tools)
 Resume file: None
