@@ -65,14 +65,14 @@ export function createAuthStorage(): AuthStorage {
 /**
  * Create a resource loader using DefaultResourceLoader with extension factories.
  */
-async function createResourceLoader(systemPrompt: string, extensions: any[] = []): Promise<ResourceLoader> {
+async function createResourceLoader(systemPrompt: string, extensions: any[] = [], cwd?: string): Promise<ResourceLoader> {
   const loader = new DefaultResourceLoader({
     systemPrompt,
     extensionFactories: extensions,
-    noExtensions: true,   // Skip file-based extension discovery
-    noSkills: true,       // We don't use skills
+    cwd,                     // Set cwd so skills are discovered from <cwd>/.pi/skills/
+    noExtensions: true,      // Skip file-based extension discovery
     noPromptTemplates: true, // We don't use prompt templates
-    noThemes: true,       // We don't use themes
+    noThemes: true,          // We don't use themes
   });
   await loader.reload();  // This processes extensionFactories into proper Extension objects
   return loader;
@@ -86,6 +86,7 @@ export interface PiSessionConfig {
   modelRegistry?: ModelRegistry;
   tools?: CoreToolDefinition[];
   cwd?: string;
+  currentMode?: string; // Current mode name for autonomy tools
   extensions?: any[]; // Pi-coding-agent extensions
 }
 
@@ -118,14 +119,17 @@ export async function createPiSession(config: PiSessionConfig): Promise<PiSessio
     retry: { enabled: true, maxRetries: 3, baseDelayMs: 1000 },
   });
 
-  const resourceLoader = await createResourceLoader(config.systemPrompt, config.extensions);
+  const resourceLoader = await createResourceLoader(config.systemPrompt, config.extensions, config.cwd);
 
   // Convert our CoreToolDefinition to pi-coding-agent's ToolDefinition format
   const customTools = config.tools?.map((tool) => ({
     ...tool,
     execute: async (toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any) => {
-      // Inject cwd context when calling the tool's execute function
-      return tool.execute(toolCallId, params, signal, onUpdate, { cwd: config.cwd || process.cwd() });
+      // Inject cwd and currentMode context when calling the tool's execute function
+      return tool.execute(toolCallId, params, signal, onUpdate, {
+        cwd: config.cwd || process.cwd(),
+        currentMode: config.currentMode || "personal",
+      });
     },
   }));
 

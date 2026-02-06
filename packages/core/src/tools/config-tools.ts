@@ -23,7 +23,7 @@ export interface ConfigToolDefinition {
     params: Record<string, unknown>,
     signal: AbortSignal | undefined,
     onUpdate: ((update: { content: Array<{ type: "text"; text: string }> }) => void) | undefined,
-    ctx: { cwd: string }
+    ctx: { cwd: string; currentMode?: string }
   ) => Promise<AgentToolResult<unknown>>;
 }
 

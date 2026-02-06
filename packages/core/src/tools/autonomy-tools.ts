@@ -27,7 +27,7 @@ export interface ConfigToolDefinition {
     params: Record<string, unknown>,
     signal: AbortSignal | undefined,
     onUpdate: ((update: { content: Array<{ type: "text"; text: string }> }) => void) | undefined,
-    ctx: { cwd: string; currentMode: string }
+    ctx: { cwd: string; currentMode?: string }
   ) => Promise<AgentToolResult<unknown>>;
 }
 
@@ -147,6 +147,8 @@ function createAddCronJobTool(
         confirmed?: boolean;
       };
 
+      const currentMode = ctx.currentMode || "personal";
+
       try {
         // Validate cron expression
         if (!cron.validate(schedule)) {
@@ -192,7 +194,7 @@ function createAddCronJobTool(
               `Name: ${name}`,
               `Schedule: ${schedule}`,
               `Tier: ${tier}`,
-              `Mode: ${ctx.currentMode}`,
+              `Mode: ${currentMode}`,
               `Prompt: ${prompt}`,
               ``,
               `Next 5 runs:`,
@@ -224,11 +226,11 @@ function createAddCronJobTool(
           schedule,
           prompt,
           tier,
-          mode: ctx.currentMode,
+          mode: currentMode,
         };
 
         // Add to config and schedule
-        await configManager.addCronJob(ctx.currentMode, cronJob);
+        await configManager.addCronJob(currentMode, cronJob);
         scheduler.scheduleJob(cronJob);
 
         // Get next run time
@@ -349,6 +351,8 @@ function createRemoveCronJobTool(
         confirmed?: boolean;
       };
 
+      const currentMode = ctx.currentMode || "personal";
+
       try {
         // Check job exists
         const job = scheduler.getJob(name);
@@ -374,7 +378,7 @@ function createRemoveCronJobTool(
 
         // Confirmed - remove the job
         scheduler.unscheduleJob(name);
-        await configManager.removeCronJob(ctx.currentMode, name);
+        await configManager.removeCronJob(currentMode, name);
 
         return {
           content: [
@@ -447,6 +451,8 @@ function createUpdateModeConfigTool(
         confirmed?: boolean;
       };
 
+      const currentMode = ctx.currentMode || "personal";
+
       try {
         // If not confirmed, show preview
         if (!confirmed) {
@@ -459,7 +465,7 @@ function createUpdateModeConfigTool(
             content: [
               {
                 type: "text",
-                text: `I'd like to update mode config for '${ctx.currentMode}':\n\nField: ${key}\nNew value: ${displayValue}\n\nReply 'yes' to confirm or 'no' to cancel.`,
+                text: `I'd like to update mode config for '${currentMode}':\n\nField: ${key}\nNew value: ${displayValue}\n\nReply 'yes' to confirm or 'no' to cancel.`,
               },
             ],
             details: {},
@@ -467,7 +473,7 @@ function createUpdateModeConfigTool(
         }
 
         // Confirmed - update config
-        await configManager.updateModeConfigField(ctx.currentMode, key, value);
+        await configManager.updateModeConfigField(currentMode, key, value);
 
         const displayValue =
           typeof value === "object"
@@ -611,7 +617,8 @@ function createGetConfigHistoryTool(
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const { mode = ctx.currentMode, limit = 10 } = params as {
+      const currentMode = ctx.currentMode || "personal";
+      const { mode = currentMode, limit = 10 } = params as {
         mode?: string;
         limit?: number;
       };

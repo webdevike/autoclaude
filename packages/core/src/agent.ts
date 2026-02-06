@@ -12,8 +12,11 @@ import {
 } from "./pi-session.js";
 import { createCoreTools } from "./tools/core-tools.js";
 import { createConfigTools } from "./tools/config-tools.js";
+import { createAutonomyTools } from "./tools/autonomy-tools.js";
 import { delegateToCodingAgent } from "./coding-delegate.js";
 import { PreferencesManager } from "./preferences.js";
+import { ConfigManager } from "./config-manager.js";
+import { scheduler } from "./cron-scheduler.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -357,12 +360,14 @@ export class AgentOrchestrator {
   private sessionManagers: Map<string, SessionManager> = new Map();
   private preferencesManagers: Map<string, PreferencesManager> = new Map();
   private configDir: string;
+  private configManager: ConfigManager;
 
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
 
   constructor(configDir?: string) {
     this.configDir = configDir || resolve(process.cwd(), "config");
+    this.configManager = new ConfigManager(this.configDir);
   }
 
   setStatusHandler(handler: (update: StatusUpdate) => void): void {
@@ -405,6 +410,9 @@ export class AgentOrchestrator {
         console.error(`[orchestrator] Failed to load ${file}:`, err instanceof Error ? err.message : err);
       }
     }
+
+    // Load cron jobs from mode configs
+    scheduler.loadFromModeConfigs(this.modes);
   }
 
   /** Reload all modes from disk (for dynamic config updates) */
@@ -799,8 +807,11 @@ export class AgentOrchestrator {
       // Create config tools for preference access
       const configTools = createConfigTools(preferencesManager);
 
+      // Create autonomy tools for self-configuration
+      const autonomyTools = createAutonomyTools(this.configManager, preferencesManager);
+
       // Merge all tools
-      const tools = [...coreTools, ...configTools];
+      const tools = [...coreTools, ...configTools, ...autonomyTools];
 
       const { session: piSession } = await createPiSession({
         modelString: modeConfig.smart.model,
@@ -809,6 +820,7 @@ export class AgentOrchestrator {
         authStorage: this.authStorage,
         tools,
         cwd,
+        currentMode: modeConfig.mode,
         extensions: EXTENSIONS,
       });
 
