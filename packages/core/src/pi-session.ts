@@ -141,6 +141,9 @@ export async function createPiSession(config: PiSessionConfig): Promise<PiSessio
     settingsManager,
   });
 
+  // Trigger session_start to initialize extension clients (Exa, Notion, Gmail, Linear)
+  await session.bindExtensions({});
+
   return { session, authStorage, modelRegistry };
 }
 
