@@ -8,7 +8,10 @@ export {
   parseModelString,
 } from "./pi-session.js";
 export { createCoreTools } from "./tools/core-tools.js";
+export { createConfigTools } from "./tools/config-tools.js";
 export { delegateToCodingAgent } from "./coding-delegate.js";
+export { PreferencesManager, UserPreferencesSchema } from "./preferences.js";
+export type { UserPreferences } from "./preferences.js";
 export type {
   AgentResponse,
   AgentSession,

@@ -11,7 +11,9 @@ import {
   parseModelString,
 } from "./pi-session.js";
 import { createCoreTools } from "./tools/core-tools.js";
+import { createConfigTools } from "./tools/config-tools.js";
 import { delegateToCodingAgent } from "./coding-delegate.js";
+import { PreferencesManager } from "./preferences.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -38,6 +40,50 @@ const EXTENSIONS = [
   notionExtension,
 ];
 
+// Keywords that bypass triage and go directly to specific agents
+const CODING_KEYWORDS = [
+  /\b(edit|modify|change|update|fix|create|write|add|remove|delete|refactor|implement)\b.*\b(file|code|function|class|component|module|script)\b/i,
+  /\b(file|code|bug|error|syntax|compile|build)\b/i,
+  /\.(ts|js|tsx|jsx|json|md|py|go|rs|java|cpp|c|html|css|scss)\b/i,
+  /^(code|coding):/i,
+];
+
+const SMART_KEYWORDS = [
+  /\b(search|research|look up|find out|what is|who is|explain|analyze|summarize)\b/i,
+  /\b(email|gmail|send email|check email|inbox)\b/i,
+  /\b(notion|linear|issue|task|page|database)\b/i,
+  /\b(web|internet|online|google|exa)\b/i,
+  /^(research|search|find):/i,
+];
+
+const SIMPLE_PATTERNS = [
+  /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|sure|bye|goodbye)[\s!?.]*$/i,
+  /^\//, // slash commands handled separately
+];
+
+type FastRouteResult = "coding" | "smart" | "simple" | null;
+
+function fastRoute(text: string): FastRouteResult {
+  const trimmed = text.trim();
+
+  // Check for simple patterns first (greetings, etc.)
+  for (const pattern of SIMPLE_PATTERNS) {
+    if (pattern.test(trimmed)) return "simple";
+  }
+
+  // Check for coding keywords
+  for (const pattern of CODING_KEYWORDS) {
+    if (pattern.test(trimmed)) return "coding";
+  }
+
+  // Check for smart/research keywords
+  for (const pattern of SMART_KEYWORDS) {
+    if (pattern.test(trimmed)) return "smart";
+  }
+
+  return null; // needs triage
+}
+
 const DELEGATION_SYSTEM_PROMPT = `You are a triage agent. Your job is to decide whether to handle a request yourself or delegate it to a specialized agent.
 
 Handle it yourself if:
@@ -54,7 +100,8 @@ Delegate to a coding agent if:
 
 Delegate to a smart agent if:
 - It requires complex reasoning or analysis WITHOUT file operations
-- It involves working with integrations (Notion, Linear, Gmail)
+- It involves working with integrations (Notion, Linear, Gmail, Exa web search)
+- It involves searching the web or looking something up online
 - It requires multi-step planning or deep thinking
 
 When delegating to coding agent, respond with exactly:
@@ -194,6 +241,7 @@ export class AgentOrchestrator {
   private activeMode: string = "personal";
   private onStatusUpdate?: (update: StatusUpdate) => void;
   private sessionManagers: Map<string, SessionManager> = new Map();
+  private preferencesManagers: Map<string, PreferencesManager> = new Map();
 
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
@@ -241,6 +289,13 @@ export class AgentOrchestrator {
     return this.sessionManagers.get(userId)!;
   }
 
+  private getPreferencesManager(userId: string): PreferencesManager {
+    if (!this.preferencesManagers.has(userId)) {
+      this.preferencesManagers.set(userId, new PreferencesManager(userId));
+    }
+    return this.preferencesManagers.get(userId)!;
+  }
+
   /** Main entry point: process an incoming message */
   async handleMessage(
     msg: Message,
@@ -252,6 +307,10 @@ export class AgentOrchestrator {
     }
 
     const sessionManager = this.getSessionManager(msg.sender);
+    const preferencesManager = this.getPreferencesManager(msg.sender);
+
+    // Load preferences for user (lazy initialization)
+    preferencesManager.load();
 
     // Check for built-in commands
     const cmdResponse = this.handleCommand(msg.text, msg.sender);
@@ -284,15 +343,71 @@ export class AgentOrchestrator {
       .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
       .join("\n");
 
+    // Fast routing: skip triage for obvious intents
+    const fastRouteResult = fastRoute(msg.text);
+    const cwd = modeConfig.cwd || process.cwd();
+
+    if (fastRouteResult === "coding") {
+      console.log(`[orchestrator] Fast route: coding`);
+      onProgress?.({ type: "status", text: "Delegating to coding agent..." });
+      return this.delegateToCoding(msg.text, modeConfig, msg.sender, onProgress);
+    }
+
+    if (fastRouteResult === "smart") {
+      console.log(`[orchestrator] Fast route: smart`);
+      onProgress?.({ type: "status", text: "Delegating to smart agent..." });
+      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
+    }
+
+    if (fastRouteResult === "simple") {
+      console.log(`[orchestrator] Fast route: simple greeting`);
+      // Handle simple greetings directly without any LLM call
+      const greetings: Record<string, string> = {
+        hi: "Hey! How can I help you today?",
+        hello: "Hello! What can I do for you?",
+        hey: "Hey there! What's up?",
+        thanks: "You're welcome!",
+        "thank you": "You're welcome! Let me know if you need anything else.",
+        ok: "👍",
+        okay: "👍",
+        yes: "Got it!",
+        no: "Alright, let me know if you change your mind.",
+        sure: "Great!",
+        bye: "Goodbye! Have a great day!",
+        goodbye: "Take care! Feel free to reach out anytime.",
+      };
+      const key = msg.text.trim().toLowerCase().replace(/[!?.]/g, "");
+      const response = greetings[key] || "Hey! How can I help?";
+      sessionManager.appendSession({
+        timestamp: Date.now(),
+        role: "assistant",
+        content: response,
+      });
+      return { text: response };
+    }
+
     // Triage: ask the cheap model whether to handle or delegate
     onProgress?.({ type: "status", text: "Triaging request..." });
 
-    // Include both registered tools and core tools
-    const cwd = modeConfig.cwd || process.cwd();
+    // Include registered tools, core tools, and extension tools
     const coreTools = createCoreTools(cwd);
     const coreToolNames = coreTools.map(t => t.name);
     const registeredToolNames = Array.from(this.tools.keys());
-    const allToolNames = [...registeredToolNames, ...coreToolNames];
+    const extensionToolNames = [
+      "exa_search (search the web for anything)",
+      "gmail_list_messages (list/search emails)",
+      "gmail_read_message (read a specific email)",
+      "gmail_send (send an email)",
+      "linear_search_issues (search Linear issues)",
+      "linear_create_issue (create a Linear issue)",
+      "linear_list_teams (list Linear teams)",
+      "linear_my_issues (my assigned Linear issues)",
+      "notion_search (search Notion pages and databases)",
+      "notion_read_page (read a Notion page)",
+      "notion_list_databases (list available Notion databases)",
+      "notion_create_page (create a Notion page in a database or under a page)",
+    ];
+    const allToolNames = [...registeredToolNames, ...coreToolNames, ...extensionToolNames];
 
     const triagePrompt = allToolNames.length
       ? `${DELEGATION_SYSTEM_PROMPT}\n\nAvailable tools: ${allToolNames.join(", ")}\n\nIf the user's request could benefit from any of these tools, ALWAYS delegate.`
@@ -458,18 +573,43 @@ export class AgentOrchestrator {
   ): Promise<string> {
     const session = this.sessions.get(sessionId)!;
     const sessionManager = this.getSessionManager(userId);
+    const preferencesManager = this.getPreferencesManager(userId);
 
-    // Build system prompt with context
-    const smartSystemPrompt = contextSummary
-      ? `${modeConfig.systemPrompt}\n\n## Recent conversation context:\n${contextSummary}`
-      : modeConfig.systemPrompt;
+    // Load user preferences
+    const prefs = preferencesManager.getAll();
+
+    // Build preferences section for system prompt
+    let preferencesSection = "\n## User Preferences\n";
+    preferencesSection += `- Response tone: ${prefs.tone || "detailed"}\n`;
+    preferencesSection += `- Verbosity level: ${prefs.verbosity || "normal"}\n`;
+
+    if (prefs.behavioralRules && prefs.behavioralRules.length > 0) {
+      preferencesSection += "\nBehavioral rules:\n";
+      for (const rule of prefs.behavioralRules) {
+        preferencesSection += `- ${rule}\n`;
+      }
+    }
+
+    // Build system prompt with context and preferences
+    let smartSystemPrompt = modeConfig.systemPrompt;
+    smartSystemPrompt += preferencesSection;
+
+    if (contextSummary) {
+      smartSystemPrompt += `\n## Recent conversation context:\n${contextSummary}`;
+    }
 
     try {
       console.log(`[orchestrator] Creating smart session with model: ${modeConfig.smart.model}`);
 
       // Create core tools for this session
       const cwd = modeConfig.cwd || process.cwd();
-      const tools = createCoreTools(cwd);
+      const coreTools = createCoreTools(cwd);
+
+      // Create config tools for preference access
+      const configTools = createConfigTools(preferencesManager);
+
+      // Merge all tools
+      const tools = [...coreTools, ...configTools];
 
       const { session: piSession } = await createPiSession({
         modelString: modeConfig.smart.model,
