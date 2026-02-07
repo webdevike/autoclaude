@@ -26,6 +26,7 @@ export type {
   ModeConfig,
   ModelConfig,
   ModelTier,
+  ScheduleType,
   StatusUpdate,
   StreamProgressEvent,
   ToolDefinition,
