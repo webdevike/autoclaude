@@ -559,78 +559,6 @@ function createAddToolShortcutTool(
   };
 }
 
-/**
- * Create get_config_history tool.
- *
- * Shows git history of config changes for audit trail.
- */
-function createGetConfigHistoryTool(
-  configManager: ConfigManager
-): ConfigToolDefinition {
-  return {
-    name: "get_config_history",
-    label: "Get Config History",
-    description: "View git history of mode config changes for audit trail",
-    parameters: Type.Object({
-      mode: Type.Optional(
-        Type.String({
-          description: "Mode name (defaults to current mode)",
-        })
-      ),
-      limit: Type.Optional(
-        Type.Number({
-          description: "Number of commits to show (default 10)",
-          default: 10,
-          minimum: 1,
-          maximum: 50,
-        })
-      ),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const currentMode = ctx.currentMode || "personal";
-      const { mode = currentMode, limit = 10 } = params as {
-        mode?: string;
-        limit?: number;
-      };
-
-      try {
-        const history = await configManager.getConfigHistory(mode, limit);
-
-        if (history.length === 0) {
-          return {
-            content: [
-              { type: "text", text: `No config history found for mode '${mode}'.` },
-            ],
-            details: {},
-          };
-        }
-
-        const historyText = [
-          `Config history for mode '${mode}' (last ${history.length} changes):`,
-          ``,
-          ...history.map((commit, i) => {
-            return `${i + 1}. [${commit.hash}] ${commit.date}\n   ${commit.message}`;
-          }),
-        ].join("\n");
-
-        return {
-          content: [{ type: "text", text: historyText }],
-          details: {},
-        };
-      } catch (err) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting config history: ${err instanceof Error ? err.message : String(err)}`,
-            },
-          ],
-          details: {},
-        };
-      }
-    },
-  };
-}
 
 /**
  * Callbacks for live cron job management (register/unregister with running scheduler).
@@ -658,7 +586,6 @@ export function createAutonomyTools(
     createListCronJobsTool(configManager),
     createRemoveCronJobTool(configManager, cronCallbacks),
     createUpdateModeConfigTool(configManager),
-    createGetConfigHistoryTool(configManager),
   ];
 
   // Add shortcut tool if preferences manager provided
