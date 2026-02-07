@@ -35,7 +35,7 @@
       "WebFetch",
       "WebSearch"
     ],
-    "permissionMode": "bypassPermissions",
+    "permissionMode": "acceptEdits",
     "maxTurns": 10
   }
 }

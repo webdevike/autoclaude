@@ -56,7 +56,7 @@ export async function runClaudeCode(
     allowedTools,
     tools,
     permissionMode,
-    allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
+    allowDangerouslySkipPermissions: false,
     resume: sessionId,
     systemPrompt: systemPrompt
       ? { type: "preset" as const, preset: "claude_code" as const, append: systemPrompt }
