@@ -1,13 +1,12 @@
 import { getModel, complete, stream } from "@mariozechner/pi-ai";
 import type { Model, Context, AssistantMessage, AssistantMessageEvent, Api, Tool } from "@mariozechner/pi-ai";
-import type { ModelConfig, ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "./types.js";
+
+// Re-export types for consumers
+export type { Model, Context, AssistantMessage, AssistantMessageEvent, Api };
 
 /**
  * Parse a model string in "provider/model" format.
- * Examples:
- *   "anthropic/claude-3-5-sonnet-20241022" -> { provider: "anthropic", model: "claude-3-5-sonnet-20241022" }
- *   "openrouter/anthropic/claude-3.5-sonnet" -> { provider: "openrouter", model: "anthropic/claude-3.5-sonnet" }
- *   "openai/gpt-4o" -> { provider: "openai", model: "gpt-4o" }
  */
 export function parseModel(modelString: string): {
   provider: string;
@@ -15,24 +14,19 @@ export function parseModel(modelString: string): {
 } {
   const parts = modelString.split("/");
   if (parts.length >= 2) {
-    // For openrouter, the model slug itself can contain slashes
-    // e.g. "openrouter/anthropic/claude-3.5-sonnet"
     const provider = parts[0];
     const model = parts.slice(1).join("/");
     return { provider, model };
   }
-  // Default to openrouter if no provider prefix
   return { provider: "openrouter", model: modelString };
 }
 
 /**
  * Create a pi-ai Model instance from a model string.
- * Reads API keys from environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY).
  */
 export function createModel(modelString: string): Model<Api> {
   const { provider, model } = parseModel(modelString);
 
-  // Map our provider names to pi-ai provider names
   const providerMap: Record<string, string> = {
     "anthropic": "anthropic",
     "openai": "openai",
@@ -44,7 +38,6 @@ export function createModel(modelString: string): Model<Api> {
     throw new Error(`Unsupported provider: ${provider}. Supported: anthropic, openai, openrouter`);
   }
 
-  // pi-ai reads API keys from environment variables automatically
   return getModel(piProvider as any, model as any) as Model<Api>;
 }
 
@@ -62,8 +55,35 @@ function convertTools(tools?: ToolDefinition[]): Tool[] | undefined {
 }
 
 /**
+ * Filter out empty assistant messages that can cause API errors.
+ * APIs reject messages with empty content.
+ */
+function filterEmptyMessages(messages: Context["messages"]): Context["messages"] {
+  return messages.filter(msg => {
+    // Keep all user messages
+    if (msg.role === "user") return true;
+
+    // For assistant messages, check if content is non-empty
+    if (msg.role === "assistant") {
+      const content = (msg as any).content;
+      // Handle both string content and array content
+      if (typeof content === "string") {
+        return content.trim().length > 0;
+      }
+      if (Array.isArray(content)) {
+        return content.length > 0;
+      }
+      // If content is missing/undefined, filter it out
+      return false;
+    }
+
+    // Keep other message types (toolResult, etc.)
+    return true;
+  });
+}
+
+/**
  * Non-streaming LLM completion using pi-ai.
- * Used for triage and simple requests.
  */
 export async function completeLLM(
   model: Model<Api>,
@@ -73,20 +93,39 @@ export async function completeLLM(
     maxTokens?: number;
   }
 ): Promise<AssistantMessage> {
-  const response = await complete(model, {
-    ...context,
-    tools: convertTools(options?.tools),
-  }, {
-    maxTokens: options?.maxTokens,
-  });
+  // Filter out empty messages before sending to API
+  const filteredMessages = filterEmptyMessages(context.messages);
 
-  return response;
+  const filteredContext: Context = {
+    ...context,
+    messages: filteredMessages,
+  };
+
+  console.log(`[llm] Calling pi-ai complete() with ${filteredMessages.length} messages`);
+
+  try {
+    const response = await complete(model, {
+      ...filteredContext,
+      tools: convertTools(options?.tools),
+    }, {
+      maxTokens: options?.maxTokens,
+    });
+
+    console.log(`[llm] pi-ai response: stopReason=${response.stopReason}, content=${JSON.stringify(response.content).slice(0, 200)}`);
+
+    if (response.stopReason === "error") {
+      console.error(`[llm] pi-ai error: ${response.errorMessage}`);
+    }
+
+    return response;
+  } catch (err) {
+    console.error(`[llm] pi-ai threw:`, err);
+    throw err;
+  }
 }
 
 /**
  * Streaming LLM completion using pi-ai.
- * Returns an async iterable of stream events.
- * Used for smart agents to provide progressive updates.
  */
 export async function* streamLLM(
   model: Model<Api>,
@@ -96,8 +135,16 @@ export async function* streamLLM(
     maxTokens?: number;
   }
 ): AsyncIterable<AssistantMessageEvent> {
-  const streamIterator = stream(model, {
+  // Filter out empty messages before sending to API
+  const filteredMessages = filterEmptyMessages(context.messages);
+
+  const filteredContext: Context = {
     ...context,
+    messages: filteredMessages,
+  };
+
+  const streamIterator = stream(model, {
+    ...filteredContext,
     tools: convertTools(options?.tools),
   }, {
     maxTokens: options?.maxTokens,

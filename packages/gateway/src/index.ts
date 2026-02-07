@@ -82,9 +82,14 @@ export class Gateway {
 
     let placeholderId: string | undefined;
     try {
-      placeholderId = await channel.sendPlaceholder?.(message.sender, "Thinking...");
+      placeholderId = await channel.sendPlaceholder?.(
+        message.sender,
+        "Contemplating...",
+      );
     } catch (err) {
-      console.warn(`[gateway] Failed to send placeholder: ${err instanceof Error ? err.message : err}`);
+      console.warn(
+        `[gateway] Failed to send placeholder: ${err instanceof Error ? err.message : err}`,
+      );
     }
 
     // Throttled message editing for streaming
@@ -92,6 +97,7 @@ export class Gateway {
     let accumulated = "";
     let lastEditTime = 0;
     let editTimer: ReturnType<typeof setTimeout> | null = null;
+    let inStatusPhase = true; // Track if we're showing status messages (no streaming)
 
     // Helper to perform a throttled edit
     const doEdit = (text: string) => {
@@ -101,7 +107,9 @@ export class Gateway {
       if (now - lastEditTime >= EDIT_THROTTLE_MS) {
         // Enough time passed, edit immediately
         lastEditTime = now;
-        channel.editMessage(message.sender, placeholderId, text).catch(() => {});
+        channel
+          .editMessage(message.sender, placeholderId, text)
+          .catch(() => {});
       } else if (!editTimer) {
         // Schedule an edit for when throttle period expires
         const remaining = EDIT_THROTTLE_MS - (now - lastEditTime);
@@ -109,47 +117,62 @@ export class Gateway {
           lastEditTime = Date.now();
           editTimer = null;
           if (placeholderId && channel.editMessage) {
-            channel.editMessage(message.sender, placeholderId, text).catch(() => {});
+            channel
+              .editMessage(message.sender, placeholderId, text)
+              .catch(() => {});
           }
         }, remaining);
       }
     };
 
     // onProgress callback - supports both StreamProgressEvent and legacy string format
-    const onProgress = placeholderId && channel.editMessage
-      ? (statusOrEvent: string | StreamProgressEvent) => {
-          // Handle backwards compatibility with string-based status
-          if (typeof statusOrEvent === "string") {
-            const event: StreamProgressEvent = {
-              type: "status",
-              text: statusOrEvent,
-            };
-            statusOrEvent = event;
-          }
+    const onProgress =
+      placeholderId && channel.editMessage
+        ? (statusOrEvent: string | StreamProgressEvent) => {
+            // Handle backwards compatibility with string-based status
+            if (typeof statusOrEvent === "string") {
+              const event: StreamProgressEvent = {
+                type: "status",
+                text: statusOrEvent,
+              };
+              statusOrEvent = event;
+            }
 
-          const event = statusOrEvent as StreamProgressEvent;
+            const event = statusOrEvent as StreamProgressEvent;
 
-          if (event.type === "text_delta" && event.delta) {
-            accumulated += event.delta;
-            doEdit(accumulated);
-          } else if (event.type === "tool_use" && event.toolName) {
-            // Show tool usage status
-            const statusText = accumulated
-              ? `${accumulated}\n\n_Using tool: ${event.toolName}..._`
-              : `Using tool: ${event.toolName}...`;
-            doEdit(statusText);
-          } else if (event.type === "status" && event.text) {
-            // Show status updates (e.g., "Triaging...", "Delegating...")
-            doEdit(event.text);
-          } else if (event.type === "done" && event.finalText) {
-            // Final update with complete text
-            accumulated = event.finalText;
+            if (event.type === "text_delta" && event.delta) {
+              // Exit status phase when we start receiving actual text
+              if (inStatusPhase) {
+                inStatusPhase = false;
+                accumulated = ""; // Reset accumulated text for clean start
+              }
+              accumulated += event.delta;
+              doEdit(accumulated);
+            } else if (event.type === "tool_use" && event.toolName) {
+              // Tool usage exits status phase
+              inStatusPhase = false;
+              const statusText = accumulated
+                ? `${accumulated}\n\n_Using tool: ${event.toolName}..._`
+                : `Using tool: ${event.toolName}...`;
+              doEdit(statusText);
+            } else if (event.type === "status" && event.text) {
+              // Status updates keep us in status phase - just show the status text
+              // Don't accumulate or mix with streaming text
+              inStatusPhase = true;
+              doEdit(event.text);
+            } else if (event.type === "done" && event.finalText) {
+              // Final update with complete text
+              inStatusPhase = false;
+              accumulated = event.finalText;
+            }
           }
-        }
-      : undefined;
+        : undefined;
 
     try {
-      const response = await this.orchestrator.handleMessage(message, onProgress);
+      const response = await this.orchestrator.handleMessage(
+        message,
+        onProgress,
+      );
 
       // Clear any pending edit timer
       if (editTimer) {
@@ -158,7 +181,9 @@ export class Gateway {
       }
 
       // Final message edit with complete response
-      const finalText = response.text?.trim() || "I processed your request but have no response to show.";
+      const finalText =
+        response.text?.trim() ||
+        "I processed your request but have no response to show.";
 
       if (placeholderId && channel.editMessage) {
         await channel.editMessage(message.sender, placeholderId, finalText);
@@ -172,13 +197,9 @@ export class Gateway {
         editTimer = null;
       }
 
-      const errorMsg =
-        err instanceof Error ? err.message : "Unknown error";
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
       console.error(`[gateway] Error processing message: ${errorMsg}`);
-      await channel.send(
-        message.sender,
-        `Something went wrong: ${errorMsg}`,
-      );
+      await channel.send(message.sender, `Something went wrong: ${errorMsg}`);
     }
   }
 
@@ -194,6 +215,16 @@ export class Gateway {
         await channel.send("broadcast", text);
       }
     }
+  }
+
+  /** Send a message to a specific channel/recipient (used for cron replies) */
+  async sendToChannel(channelName: string, recipient: string, text: string): Promise<void> {
+    const channel = this.channels.get(channelName);
+    if (!channel) {
+      console.warn(`[gateway] Channel '${channelName}' not found for cron reply`);
+      return;
+    }
+    await channel.send(recipient, text);
   }
 
   /** Shutdown all channels */

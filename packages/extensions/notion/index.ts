@@ -6,6 +6,7 @@
  */
 
 import { Client } from "@notionhq/client";
+import { markdownToBlocks } from "@tryfabric/martian";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
@@ -68,6 +69,10 @@ export default function notionExtension(pi: ExtensionAPI) {
           ...(r.object === "page" && "properties" in r
             ? { title: extractTitle(r) }
             : {}),
+          ...(r.object === "database"
+            ? { title: r.title?.map((t: any) => t.plain_text).join("") || "(untitled)" }
+            : {}),
+          ...(r.url ? { url: r.url } : {}),
         }));
 
         return {
@@ -127,21 +132,74 @@ export default function notionExtension(pi: ExtensionAPI) {
     },
   });
 
+  // Register notion_list_databases tool
+  pi.registerTool({
+    name: "notion_list_databases",
+    label: "List Notion Databases",
+    description: "List all databases the integration has access to. Use this to find database IDs for creating pages.",
+    parameters: Type.Object({}),
+    async execute(toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
+      if (!notion) {
+        return {
+          content: [{ type: "text", text: "Notion not initialized. Check NOTION_API_KEY environment variable." }],
+          details: {},
+        };
+      }
+
+      try {
+        const results = await notion.search({
+          filter: { property: "object", value: "database" },
+          page_size: 50,
+        });
+
+        if (results.results.length === 0) {
+          return {
+            content: [{ type: "text", text: "No databases found. Make sure databases are shared with the integration." }],
+            details: {},
+          };
+        }
+
+        const databases = results.results.map((db: any) => ({
+          id: db.id,
+          title: db.title?.map((t: any) => t.plain_text).join("") || "(untitled)",
+          url: db.url,
+        }));
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(databases, null, 2) }],
+          details: {},
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error listing databases: ${error instanceof Error ? error.message : "Unknown error"}` }],
+          details: {},
+        };
+      }
+    },
+  });
+
   // Register notion_create_page tool
   pi.registerTool({
     name: "notion_create_page",
     label: "Create Notion Page",
-    description: "Create a new page in a Notion database",
+    description: "Create a new page in Notion. Provide either databaseId (to add a row to a database) or parentPageId (to create a subpage under a page).",
     parameters: Type.Object({
-      databaseId: Type.String({
-        description: "Target database ID",
-      }),
+      databaseId: Type.Optional(
+        Type.String({
+          description: "Target database ID (creates a database row)",
+        })
+      ),
+      parentPageId: Type.Optional(
+        Type.String({
+          description: "Parent page ID (creates a subpage)",
+        })
+      ),
       title: Type.String({
         description: "Page title",
       }),
       content: Type.Optional(
         Type.String({
-          description: "Page content as plain text",
+          description: "Page content in markdown. Supports headings (##, ###), bold (**text**), italic (*text*), bulleted lists (- item), numbered lists (1. item), horizontal rules (---), and plain paragraphs.",
         })
       ),
     }),
@@ -153,29 +211,34 @@ export default function notionExtension(pi: ExtensionAPI) {
         };
       }
 
+      if (!params.databaseId && !params.parentPageId) {
+        return {
+          content: [{ type: "text", text: "Either databaseId or parentPageId is required. Use notion_list_databases to find available databases." }],
+          details: {},
+        };
+      }
+
       try {
+        const parent = params.databaseId
+          ? { database_id: params.databaseId }
+          : { page_id: params.parentPageId! };
+
+        const properties = params.databaseId
+          ? { title: { title: [{ text: { content: params.title } }] } }
+          : { title: { title: [{ text: { content: params.title } }] } };
+
+        const children = params.content
+          ? markdownToBlocks(params.content) as any[]
+          : [];
+
         const page = await notion.pages.create({
-          parent: { database_id: params.databaseId },
-          properties: {
-            title: {
-              title: [{ text: { content: params.title } }],
-            },
-          },
-          children: params.content
-            ? [
-                {
-                  object: "block" as const,
-                  type: "paragraph" as const,
-                  paragraph: {
-                    rich_text: [{ text: { content: params.content } }],
-                  },
-                },
-              ]
-            : [],
+          parent: parent as any,
+          properties,
+          children,
         });
 
         return {
-          content: [{ type: "text", text: `Created page: ${page.id}` }],
+          content: [{ type: "text", text: `Created page: ${page.id}\nURL: ${(page as any).url}` }],
           details: {},
         };
       } catch (error) {

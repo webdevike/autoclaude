@@ -11,10 +11,10 @@ export { createCoreTools } from "./tools/core-tools.js";
 export { createConfigTools } from "./tools/config-tools.js";
 export { createAutonomyTools } from "./tools/autonomy-tools.js";
 export { delegateToCodingAgent } from "./coding-delegate.js";
+export { runClaudeCode } from "./claude-code-delegate.js";
 export { PreferencesManager, UserPreferencesSchema } from "./preferences.js";
 export type { UserPreferences } from "./preferences.js";
 export { ConfigManager } from "./config-manager.js";
-export { CronScheduler, scheduler } from "./cron-scheduler.js";
 export type {
   AgentResponse,
   AgentSession,

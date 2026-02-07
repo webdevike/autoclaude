@@ -1,8 +1,9 @@
 {
   "mode": "personal",
-  "systemPrompt": "You are Jarvis, a personal AI assistant. You help with personal tasks, projects, and day-to-day organization. Be direct and casual.",
+  "provider": "claude-code",
+  "systemPrompt": "You are Jarvis, a personal AI assistant. You help with personal tasks, projects, and day-to-day organization. Be direct and casual.\n\nCRON JOBS: When adding cron jobs to config/personal.json, each entry MUST have these fields: name (string), schedule (cron expression), prompt (string), tier ('triage' or 'smart'), mode ('personal'). The scheduler auto-routes responses to the user's Telegram. Crons added to config take effect on next restart.",
   "triage": {
-    "model": "openrouter/anthropic/claude-3.5-haiku",
+    "model": "openrouter/google/gemini-2.5-flash-lite",
     "maxTokens": 1024
   },
   "smart": {
@@ -12,5 +13,29 @@
   "channels": ["telegram"],
   "integrations": ["notion", "gmail"],
   "statusInterval": 300,
-  "crons": []
+  "crons": [],
+  "claudeCode": {
+    "tools": [
+      "Read",
+      "Bash",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "allowedTools": [
+      "Read",
+      "Bash",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "permissionMode": "bypassPermissions",
+    "maxTurns": 10
+  }
 }

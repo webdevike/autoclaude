@@ -2,27 +2,22 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-import type { AgentSession as PiAgentSession } from "@mariozechner/pi-coding-agent";
 import {
   createPiSession,
   createAuthStorage,
   promptWithStreaming,
-  promptSimple,
-  parseModelString,
 } from "./pi-session.js";
 import { createCoreTools } from "./tools/core-tools.js";
 import { createConfigTools } from "./tools/config-tools.js";
 import { createAutonomyTools } from "./tools/autonomy-tools.js";
-import { delegateToCodingAgent } from "./coding-delegate.js";
+import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
-import { scheduler } from "./cron-scheduler.js";
 import type {
   AgentResponse,
   AgentSession,
   Message,
   ModeConfig,
-  ModelTier,
   StatusUpdate,
   ToolDefinition,
   SessionEntry,
@@ -42,78 +37,6 @@ const EXTENSIONS = [
   linearExtension,
   notionExtension,
 ];
-
-// Keywords that bypass triage and go directly to specific agents
-const CODING_KEYWORDS = [
-  /\b(edit|modify|change|update|fix|create|write|add|remove|delete|refactor|implement)\b.*\b(file|code|function|class|component|module|script)\b/i,
-  /\b(file|code|bug|error|syntax|compile|build)\b/i,
-  /\.(ts|js|tsx|jsx|json|md|py|go|rs|java|cpp|c|html|css|scss)\b/i,
-  /^(code|coding):/i,
-];
-
-const SMART_KEYWORDS = [
-  /\b(search|research|look up|find out|what is|who is|explain|analyze|summarize)\b/i,
-  /\b(email|gmail|send email|check email|inbox)\b/i,
-  /\b(notion|linear|issue|task|page|database)\b/i,
-  /\b(web|internet|online|google|exa)\b/i,
-  /^(research|search|find):/i,
-];
-
-const SIMPLE_PATTERNS = [
-  /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|sure|bye|goodbye)[\s!?.]*$/i,
-  /^\//, // slash commands handled separately
-];
-
-type FastRouteResult = "coding" | "smart" | "simple" | null;
-
-function fastRoute(text: string): FastRouteResult {
-  const trimmed = text.trim();
-
-  // Check for simple patterns first (greetings, etc.)
-  for (const pattern of SIMPLE_PATTERNS) {
-    if (pattern.test(trimmed)) return "simple";
-  }
-
-  // Check for coding keywords
-  for (const pattern of CODING_KEYWORDS) {
-    if (pattern.test(trimmed)) return "coding";
-  }
-
-  // Check for smart/research keywords
-  for (const pattern of SMART_KEYWORDS) {
-    if (pattern.test(trimmed)) return "smart";
-  }
-
-  return null; // needs triage
-}
-
-const DELEGATION_SYSTEM_PROMPT = `You are a triage agent. Your job is to decide whether to handle a request yourself or delegate it to a specialized agent.
-
-Handle it yourself if:
-- It's a simple question or greeting
-- It's a status check
-- It requires a quick factual answer
-- It's a simple command (switch mode, list crons, etc.)
-
-Delegate to a coding agent if:
-- It involves file operations (reading, writing, editing files)
-- It requires shell commands or system operations
-- It involves code analysis or multi-file changes
-- The user explicitly asks for coding work
-
-Delegate to a smart agent if:
-- It requires complex reasoning or analysis WITHOUT file operations
-- It involves working with integrations (Notion, Linear, Gmail, Exa web search)
-- It involves searching the web or looking something up online
-- It requires multi-step planning or deep thinking
-
-When delegating to coding agent, respond with exactly:
-CODING: <concise task description for the coding agent>
-
-When delegating to smart agent, respond with exactly:
-DELEGATE: <concise task description for the smart agent>
-
-When handling yourself, just respond normally.`;
 
 // Cost per 1M tokens (input/output) in USD
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -365,9 +288,69 @@ export class AgentOrchestrator {
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
 
+  // Claude Code session IDs per user (for conversation continuity)
+  private claudeCodeSessions: Map<string, string> = new Map();
+
+  // Cached skill docs from .pi/skills/*/SKILL.md (loaded once)
+  private skillDocsCache: string | null = null;
+
+  // Callbacks for live cron job management (set by CLI after scheduler is created)
+  private cronCallbacks?: {
+    onAdded: (config: import("./types.js").CronJobConfig) => void;
+    onRemoved: (name: string) => void;
+  };
+
   constructor(configDir?: string) {
     this.configDir = configDir || resolve(process.cwd(), "config");
     this.configManager = new ConfigManager(this.configDir);
+  }
+
+  /** Set callbacks for live cron job management (called by CLI after scheduler is ready) */
+  setCronCallbacks(callbacks: {
+    onAdded: (config: import("./types.js").CronJobConfig) => void;
+    onRemoved: (name: string) => void;
+  }): void {
+    this.cronCallbacks = callbacks;
+  }
+
+  /** Get cron callbacks (used by autonomy tools) */
+  getCronCallbacks() {
+    return this.cronCallbacks;
+  }
+
+  /** Load .pi/skills SKILL.md files and cache as a combined string */
+  private getSkillDocs(): string {
+    if (this.skillDocsCache !== null) return this.skillDocsCache;
+
+    const skillsDir = resolve(process.cwd(), ".pi", "skills");
+    if (!existsSync(skillsDir)) {
+      this.skillDocsCache = "";
+      return "";
+    }
+
+    const parts: string[] = [];
+    try {
+      const dirs = readdirSync(skillsDir);
+      for (const dir of dirs) {
+        const skillPath = resolve(skillsDir, dir, "SKILL.md");
+        if (existsSync(skillPath)) {
+          const content = readFileSync(skillPath, "utf-8");
+          parts.push(content);
+        }
+      }
+    } catch (err) {
+      console.warn("[orchestrator] Failed to load skill docs:", err instanceof Error ? err.message : err);
+    }
+
+    this.skillDocsCache = parts.length
+      ? "\n\n## Available Integrations & Skills\n\nYou have access to these integrations via Bash (curl). Use them when the user's request involves these services.\n\n" + parts.join("\n\n---\n\n")
+      : "";
+
+    if (this.skillDocsCache) {
+      console.log(`[orchestrator] Loaded ${parts.length} skill doc(s) from .pi/skills/`);
+    }
+
+    return this.skillDocsCache;
   }
 
   setStatusHandler(handler: (update: StatusUpdate) => void): void {
@@ -411,8 +394,6 @@ export class AgentOrchestrator {
       }
     }
 
-    // Load cron jobs from mode configs
-    scheduler.loadFromModeConfigs(this.modes);
   }
 
   /** Reload all modes from disk (for dynamic config updates) */
@@ -518,225 +499,29 @@ export class AgentOrchestrator {
       return cmdResponse;
     }
 
-    // Log user message
-    sessionManager.appendSession({
-      timestamp: Date.now(),
-      role: "user",
-      content: msg.text,
-    });
+    // Primary path: Claude Code SDK (handles all messages)
+    try {
+      return await this.delegateToClaudeCode(msg, modeConfig, onProgress);
+    } catch (err) {
+      console.warn(
+        `[orchestrator] Claude Code failed, falling back to pi-ai:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
 
-    // Load conversation history for context
+    // Fallback: Pi-AI smart agent
+    onProgress?.({ type: "status", text: "Falling back to smart agent..." });
+
     const history = sessionManager.loadSession(50);
     const contextSummary = history
       .slice(-10)
       .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
       .join("\n");
 
-    // Apply working directory from mode config
-    const cwd = modeConfig.cwd || process.cwd();
-    if (modeConfig.cwd) {
-      if (existsSync(modeConfig.cwd)) {
-        process.env.AGENT_CWD = modeConfig.cwd;
-        console.log(`[mode] Working directory: ${modeConfig.cwd}`);
-      } else {
-        console.warn(`[mode] Configured cwd does not exist: ${modeConfig.cwd}`);
-      }
-    }
-
-    // Fast routing: skip triage for obvious intents
-    const fastRouteResult = fastRoute(msg.text);
-
-    if (fastRouteResult === "coding") {
-      console.log(`[orchestrator] Fast route: coding`);
-      onProgress?.({ type: "status", text: "Delegating to coding agent..." });
-      return this.delegateToCoding(msg.text, modeConfig, msg.sender, onProgress);
-    }
-
-    if (fastRouteResult === "smart") {
-      console.log(`[orchestrator] Fast route: smart`);
-      onProgress?.({ type: "status", text: "Delegating to smart agent..." });
-      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
-    }
-
-    if (fastRouteResult === "simple") {
-      console.log(`[orchestrator] Fast route: simple greeting`);
-      // Handle simple greetings directly without any LLM call
-      const greetings: Record<string, string> = {
-        hi: "Hey! How can I help you today?",
-        hello: "Hello! What can I do for you?",
-        hey: "Hey there! What's up?",
-        thanks: "You're welcome!",
-        "thank you": "You're welcome! Let me know if you need anything else.",
-        ok: "👍",
-        okay: "👍",
-        yes: "Got it!",
-        no: "Alright, let me know if you change your mind.",
-        sure: "Great!",
-        bye: "Goodbye! Have a great day!",
-        goodbye: "Take care! Feel free to reach out anytime.",
-      };
-      const key = msg.text.trim().toLowerCase().replace(/[!?.]/g, "");
-      const response = greetings[key] || "Hey! How can I help?";
-      sessionManager.appendSession({
-        timestamp: Date.now(),
-        role: "assistant",
-        content: response,
-      });
-      return { text: response };
-    }
-
-    // Triage: ask the cheap model whether to handle or delegate
-    onProgress?.({ type: "status", text: "Triaging request..." });
-
-    // Include registered tools, core tools, and extension tools
-    const coreTools = createCoreTools(cwd);
-    const coreToolNames = coreTools.map(t => t.name);
-    const registeredToolNames = Array.from(this.tools.keys());
-    const extensionToolNames = [
-      "exa_search (search the web for anything)",
-      "gmail_list_messages (list/search emails)",
-      "gmail_read_message (read a specific email)",
-      "gmail_send (send an email)",
-      "linear_search_issues (search Linear issues)",
-      "linear_create_issue (create a Linear issue)",
-      "linear_list_teams (list Linear teams)",
-      "linear_my_issues (my assigned Linear issues)",
-      "notion_search (search Notion pages and databases)",
-      "notion_read_page (read a Notion page)",
-      "notion_list_databases (list available Notion databases)",
-      "notion_create_page (create a Notion page in a database or under a page)",
-    ];
-    const allToolNames = [...registeredToolNames, ...coreToolNames, ...extensionToolNames];
-
-    const triagePrompt = allToolNames.length
-      ? `${DELEGATION_SYSTEM_PROMPT}\n\nAvailable tools: ${allToolNames.join(", ")}\n\nIf the user's request could benefit from any of these tools, ALWAYS delegate.`
-      : DELEGATION_SYSTEM_PROMPT;
-
-    const triageSystemPrompt = contextSummary
-      ? `${triagePrompt}\n\n## Recent conversation context:\n${contextSummary}`
-      : triagePrompt;
-
-    try {
-      console.log(`[orchestrator] Creating triage session with model: ${modeConfig.triage.model}`);
-
-      const { session: triageSession } = await createPiSession({
-        modelString: modeConfig.triage.model,
-        systemPrompt: triageSystemPrompt,
-        authStorage: this.authStorage,
-      });
-
-      const triageResponse = await promptSimple(triageSession, msg.text);
-
-      console.log(`[orchestrator] Triage response: ${triageResponse.slice(0, 200)}`);
-
-      // Log triage response (usage estimation - SDK doesn't expose exact tokens easily)
-      sessionManager.appendSession({
-        timestamp: Date.now(),
-        role: "assistant",
-        content: triageResponse,
-        usage: {
-          inputTokens: Math.ceil(triageSystemPrompt.length / 4) + Math.ceil(msg.text.length / 4),
-          outputTokens: Math.ceil(triageResponse.length / 4),
-          model: modeConfig.triage.model,
-          cost: calculateCost(modeConfig.triage.model, 500, 100), // Rough estimate
-        },
-      });
-
-      // Check for coding delegation first
-      const codingIdx = triageResponse.indexOf("CODING:");
-      if (codingIdx !== -1) {
-        const task = triageResponse.slice(codingIdx + "CODING:".length).trim();
-        onProgress?.({ type: "status", text: "Delegating to coding agent..." });
-        return this.delegateToCoding(task, modeConfig, msg.sender, onProgress);
-      }
-
-      // Check for smart agent delegation
-      const delegateIdx = triageResponse.indexOf("DELEGATE:");
-      if (delegateIdx !== -1) {
-        const taskDescription = triageResponse.slice(delegateIdx + "DELEGATE:".length).trim();
-        onProgress?.({ type: "status", text: "Delegating to smart agent..." });
-        return this.delegateToSmart(taskDescription, modeConfig, msg.sender, contextSummary, onProgress);
-      }
-
-      // Triage handled it directly
-      if (triageResponse.trim()) {
-        onProgress?.({ type: "done", finalText: triageResponse });
-        return { text: triageResponse };
-      }
-
-      // Empty response from triage - fall through to smart agent
-      console.log(`[orchestrator] Triage returned empty, escalating to smart agent`);
-      onProgress?.({ type: "status", text: "Escalating to smart agent..." });
-      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
-
-    } catch (err) {
-      console.error(`[orchestrator] Triage error:`, err);
-
-      // If triage fails, try smart agent directly
-      onProgress?.({ type: "status", text: "Triage failed, trying smart agent..." });
-      return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
-    }
+    return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
   }
 
-  /** Delegate work to a coding agent using pi-coding-agent */
-  private async delegateToCoding(
-    task: string,
-    modeConfig: ModeConfig,
-    userId: string,
-    onProgress?: (event: StreamProgressEvent) => void,
-  ): Promise<AgentResponse> {
-    const sessionId = randomUUID().slice(0, 8);
-
-    const session: AgentSession = {
-      id: sessionId,
-      tier: "smart",
-      mode: modeConfig.mode,
-      startedAt: Date.now(),
-      status: "running",
-    };
-
-    this.sessions.set(sessionId, session);
-
-    onProgress?.({ type: "status", text: `Coding: ${task.slice(0, 60)}...` });
-
-    try {
-      const cwd = modeConfig.cwd || process.cwd();
-      const result = await delegateToCodingAgent({
-        task,
-        cwd,
-        modelString: modeConfig.smart.model,
-        authStorage: this.authStorage,
-        onProgress,
-      });
-
-      const sessionManager = this.getSessionManager(userId);
-      sessionManager.appendSession({
-        timestamp: Date.now(),
-        role: "assistant",
-        content: result,
-        usage: {
-          inputTokens: Math.ceil(task.length / 4),
-          outputTokens: Math.ceil(result.length / 4),
-          model: modeConfig.smart.model,
-          cost: calculateCost(modeConfig.smart.model, 500, 300),
-        },
-      });
-
-      session.status = "completed";
-      session.lastUpdate = result;
-      this.emitStatus(sessionId, `Completed: ${result.slice(0, 200)}`);
-
-      return { text: result, metadata: { sessionId } };
-    } catch (err) {
-      console.error(`[orchestrator] Coding agent error:`, err);
-      session.status = "failed";
-      session.lastUpdate = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
-      this.emitStatus(sessionId, session.lastUpdate);
-      throw err;
-    }
-  }
-
-  /** Delegate work to a smart agent using Pi SDK */
+  /** Fallback: delegate work to a smart agent using Pi SDK */
   private async delegateToSmart(
     task: string,
     modeConfig: ModeConfig,
@@ -808,7 +593,7 @@ export class AgentOrchestrator {
       const configTools = createConfigTools(preferencesManager);
 
       // Create autonomy tools for self-configuration
-      const autonomyTools = createAutonomyTools(this.configManager, preferencesManager);
+      const autonomyTools = createAutonomyTools(this.configManager, preferencesManager, this.cronCallbacks);
 
       // Merge all tools
       const tools = [...coreTools, ...configTools, ...autonomyTools];
@@ -852,6 +637,111 @@ export class AgentOrchestrator {
       session.status = "failed";
       session.lastUpdate = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
       this.emitStatus(sessionId, session.lastUpdate);
+
+      throw err;
+    }
+  }
+
+  /** Primary: delegate to Claude Code SDK with session continuity */
+  private async delegateToClaudeCode(
+    msg: Message,
+    modeConfig: ModeConfig,
+    onProgress?: (event: StreamProgressEvent) => void,
+  ): Promise<AgentResponse> {
+    const sessionManager = this.getSessionManager(msg.sender);
+
+    // Log user message
+    sessionManager.appendSession({
+      timestamp: Date.now(),
+      role: "user",
+      content: msg.text,
+    });
+
+    onProgress?.({ type: "status", text: "Thinking..." });
+
+    const cwd = modeConfig.cwd || process.cwd();
+    const existingSessionId = this.claudeCodeSessions.get(msg.sender);
+
+    // Build system prompt with skill docs so Claude knows about integrations
+    const systemPrompt = modeConfig.systemPrompt + this.getSkillDocs();
+
+    try {
+      const result = await runClaudeCode({
+        prompt: msg.text,
+        systemPrompt,
+        sessionId: existingSessionId,
+        allowedTools: modeConfig.claudeCode?.allowedTools,
+        tools: modeConfig.claudeCode?.tools,
+        permissionMode: modeConfig.claudeCode?.permissionMode,
+        maxTurns: modeConfig.claudeCode?.maxTurns,
+        cwd,
+        onProgress,
+      });
+
+      // Store session ID for continuity
+      if (result.sessionId) {
+        this.claudeCodeSessions.set(msg.sender, result.sessionId);
+        console.log(
+          `[orchestrator] Claude Code session for ${msg.sender}: ${result.sessionId}`,
+        );
+      }
+
+      const finalText =
+        result.text?.trim() ||
+        "I processed your request but have no response to show.";
+
+      sessionManager.appendSession({
+        timestamp: Date.now(),
+        role: "assistant",
+        content: finalText,
+      });
+
+      return { text: finalText };
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Unknown error";
+      console.error(`[orchestrator] Claude Code error:`, errorMsg);
+
+      // If resume failed, try without session (fresh conversation)
+      if (existingSessionId) {
+        console.log(
+          `[orchestrator] Retrying without session resume for ${msg.sender}`,
+        );
+        this.claudeCodeSessions.delete(msg.sender);
+
+        try {
+          const result = await runClaudeCode({
+            prompt: msg.text,
+            systemPrompt,
+            allowedTools: modeConfig.claudeCode?.allowedTools,
+            tools: modeConfig.claudeCode?.tools,
+            permissionMode: modeConfig.claudeCode?.permissionMode,
+            maxTurns: modeConfig.claudeCode?.maxTurns,
+            cwd,
+            onProgress,
+          });
+
+          if (result.sessionId) {
+            this.claudeCodeSessions.set(msg.sender, result.sessionId);
+          }
+
+          const finalText =
+            result.text?.trim() ||
+            "I processed your request but have no response to show.";
+
+          sessionManager.appendSession({
+            timestamp: Date.now(),
+            role: "assistant",
+            content: finalText,
+          });
+
+          return { text: finalText };
+        } catch (retryErr) {
+          const retryMsg =
+            retryErr instanceof Error ? retryErr.message : "Unknown error";
+          throw new Error(`Claude Code failed: ${retryMsg}`);
+        }
+      }
 
       throw err;
     }

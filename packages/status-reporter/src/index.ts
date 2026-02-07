@@ -3,7 +3,6 @@ import type {
   StatusUpdate,
   Channel,
 } from "@jarvis/core";
-import type { TmuxManager } from "@jarvis/core";
 
 interface ReporterConfig {
   /** Seconds between status updates. 0 = disabled */
@@ -17,20 +16,19 @@ interface ReporterConfig {
 /**
  * Periodically checks on running smart agent sessions
  * and sends you status updates through your active channel.
+ *
+ * Note: TmuxManager integration deferred to Phase 2.
  */
 export class StatusReporter {
   private timer: ReturnType<typeof setInterval> | null = null;
   private orchestrator: AgentOrchestrator;
-  private tmux: TmuxManager;
   private config: ReporterConfig;
 
   constructor(
     orchestrator: AgentOrchestrator,
-    tmux: TmuxManager,
     config: ReporterConfig,
   ) {
     this.orchestrator = orchestrator;
-    this.tmux = tmux;
     this.config = config;
   }
 
@@ -74,14 +72,6 @@ export class StatusReporter {
       lines.push(
         `[${session.id}] ${session.tier}/${session.mode} | running ${elapsed}s`,
       );
-
-      if (session.tmuxWindow) {
-        const peek = this.tmux.peek(session.tmuxWindow, 10);
-        const lastLine = peek.trim().split("\n").pop() ?? "";
-        if (lastLine) {
-          lines.push(`  └ ${lastLine.slice(0, 200)}`);
-        }
-      }
 
       if (session.lastUpdate) {
         lines.push(`  └ last: ${session.lastUpdate}`);

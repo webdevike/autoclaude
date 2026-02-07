@@ -1,4 +1,5 @@
 import type { Channel, Message } from "@jarvis/core";
+import telegramifyMarkdown from "telegramify-markdown";
 
 interface TelegramUpdate {
   update_id: number;
@@ -29,6 +30,7 @@ export class TelegramChannel implements Channel {
   private running = false;
   private offset = 0;
   private pollInterval = 2000;
+  private processedUpdates = new Set<number>(); // Track processed update IDs to prevent duplicates
 
   constructor(token: string, allowedUsers?: string[]) {
     this.token = token;
@@ -113,7 +115,19 @@ export class TelegramChannel implements Channel {
         });
 
         for (const update of updates) {
+          // Skip already processed updates (prevents duplicates on retry)
+          if (this.processedUpdates.has(update.update_id)) {
+            this.offset = update.update_id + 1;
+            continue;
+          }
+          this.processedUpdates.add(update.update_id);
           this.offset = update.update_id + 1;
+
+          // Keep the set from growing indefinitely (only keep last 100)
+          if (this.processedUpdates.size > 100) {
+            const oldest = Math.min(...this.processedUpdates);
+            this.processedUpdates.delete(oldest);
+          }
 
           if (!update.message?.text) continue;
 
@@ -193,25 +207,46 @@ export class TelegramChannel implements Channel {
 
     // Guard against empty text - Telegram rejects empty messages
     const safeText = text?.trim() || "...";
+    const formatted = toTelegramMarkdown(safeText);
 
-    const chunks = splitMessage(safeText, 4096);
-    // Edit the placeholder with the first chunk
-    await this.api("editMessageText", {
-      chat_id: Number(chatId),
-      message_id: Number(messageId),
-      text: chunks[0],
-    });
-    // Send remaining chunks as new messages
-    for (let i = 1; i < chunks.length; i++) {
-      await this.api("sendMessage", {
+    const chunks = splitMessage(formatted, 4096);
+    try {
+      // Edit the placeholder with the first chunk
+      await this.api("editMessageText", {
         chat_id: Number(chatId),
-        text: chunks[i],
+        message_id: Number(messageId),
+        text: chunks[0],
+        parse_mode: "MarkdownV2",
       });
+      // Send remaining chunks as new messages
+      for (let i = 1; i < chunks.length; i++) {
+        await this.api("sendMessage", {
+          chat_id: Number(chatId),
+          text: chunks[i],
+          parse_mode: "MarkdownV2",
+        });
+      }
+    } catch {
+      // Fallback to plain text
+      console.warn("[telegram] MarkdownV2 parse failed in edit, falling back to plain text");
+      const plainChunks = splitMessage(safeText, 4096);
+      await this.api("editMessageText", {
+        chat_id: Number(chatId),
+        message_id: Number(messageId),
+        text: plainChunks[0],
+      });
+      for (let i = 1; i < plainChunks.length; i++) {
+        await this.api("sendMessage", {
+          chat_id: Number(chatId),
+          text: plainChunks[i],
+        });
+      }
     }
   }
 
   async send(recipient: string, text: string): Promise<void> {
-    const chatId = chatIdMap.get(recipient);
+    // Try mapped chat ID first, fall back to using recipient directly (for cron replies with raw chat IDs)
+    const chatId = chatIdMap.get(recipient) ?? (/^\d+$/.test(recipient) ? recipient : null);
     if (!chatId) {
       console.error(
         `[telegram] No chat ID for recipient: ${recipient}`,
@@ -221,13 +256,28 @@ export class TelegramChannel implements Channel {
 
     // Guard against empty text
     const safeText = text?.trim() || "...";
+    const formatted = toTelegramMarkdown(safeText);
 
-    const chunks = splitMessage(safeText, 4096);
+    const chunks = splitMessage(formatted, 4096);
     for (const chunk of chunks) {
-      await this.api("sendMessage", {
-        chat_id: Number(chatId),
-        text: chunk,
-      });
+      try {
+        await this.api("sendMessage", {
+          chat_id: Number(chatId),
+          text: chunk,
+          parse_mode: "MarkdownV2",
+        });
+      } catch {
+        // Fallback to plain text if MarkdownV2 parsing fails
+        console.warn("[telegram] MarkdownV2 parse failed, falling back to plain text");
+        const plainChunks = splitMessage(safeText, 4096);
+        for (const plain of plainChunks) {
+          await this.api("sendMessage", {
+            chat_id: Number(chatId),
+            text: plain,
+          });
+        }
+        return;
+      }
     }
   }
 
@@ -239,6 +289,19 @@ export class TelegramChannel implements Channel {
 
 // In-memory map of username/id -> chatId
 const chatIdMap = new Map<string, string>();
+
+/**
+ * Convert standard markdown (LLM output) to Telegram MarkdownV2.
+ * Uses telegramify-markdown for proper AST-based conversion and escaping.
+ */
+function toTelegramMarkdown(text: string): string {
+  try {
+    return telegramifyMarkdown(text, "escape");
+  } catch {
+    // If conversion fails, return original text (will be sent as plain text)
+    return text;
+  }
+}
 
 function splitMessage(text: string, maxLen: number): string[] {
   if (text.length <= maxLen) return [text];

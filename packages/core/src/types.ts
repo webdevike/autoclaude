@@ -12,6 +12,7 @@ export interface ModeConfig {
   mode: string;
   systemPrompt: string;
   tone?: string; // optional tone setting (e.g., "casual", "professional")
+  provider?: "pi-ai" | "claude-code"; // LLM backend (default: "pi-ai")
   triage: ModelConfig;
   smart: ModelConfig;
   channels: string[];
@@ -19,14 +20,27 @@ export interface ModeConfig {
   statusInterval: number; // seconds between status updates, 0 = disabled
   crons: CronJobConfig[];
   cwd?: string; // working directory for tool execution (defaults to process.cwd())
+  claudeCode?: {
+    allowedTools?: string[]; // auto-approve these tools without prompting
+    tools?: string[]; // limit available built-in tools (skips MCP loading if set)
+    permissionMode?: "default" | "bypassPermissions" | "acceptEdits";
+    maxTurns?: number; // limit agentic turns per request
+  };
 }
+
+export type ScheduleType = "cron" | "at" | "every";
 
 export interface CronJobConfig {
   name: string;
-  schedule: string; // cron expression
+  scheduleType?: ScheduleType; // defaults to "cron" for backward compat
+  schedule: string; // cron expression, ISO 8601 timestamp, or interval in ms
   prompt: string; // what to tell the agent to do
   tier: ModelTier; // which agent tier handles it
   mode: string; // which mode context to use
+  replyTo?: {
+    channel: string; // e.g. "telegram"
+    chatId: string;  // e.g. "7912066552"
+  };
 }
 
 export interface Message {

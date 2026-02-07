@@ -188,11 +188,14 @@ export default function linearExtension(pi: ExtensionAPI) {
         const me = await linear.viewer;
         const issues = await me.assignedIssues({ first: 20 });
 
-        const results = issues.nodes.map((i) => ({
-          id: i.identifier,
-          title: i.title,
-          priority: i.priority,
-        }));
+        const results = await Promise.all(
+          issues.nodes.map(async (i) => ({
+            id: i.identifier,
+            title: i.title,
+            state: await i.state?.then((s) => s.name),
+            priority: i.priority,
+          }))
+        );
 
         return {
           content: [{ type: "text", text: JSON.stringify(results, null, 2) }],

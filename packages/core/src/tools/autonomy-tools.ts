@@ -5,14 +5,15 @@
  * and create shortcuts. All config changes require confirmation before saving.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Type, type TObject } from "@sinclair/typebox";
 import type { AgentToolResult } from "@mariozechner/pi-coding-agent";
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { scheduler } from "../cron-scheduler.js";
 import type { ConfigManager } from "../config-manager.js";
 import type { PreferencesManager } from "../preferences.js";
-import type { CronJobConfig, ModelTier } from "../types.js";
+import type { CronJobConfig, ModeConfig, ModelTier } from "../types.js";
 
 /**
  * Tool definition compatible with pi-coding-agent format.
@@ -101,34 +102,29 @@ function validateCronPrompt(prompt: string): string | null {
  * Allows agent to schedule recurring tasks with confirmation flow.
  */
 function createAddCronJobTool(
-  configManager: ConfigManager
+  configManager: ConfigManager,
+  cronCallbacks?: CronCallbacks
 ): ConfigToolDefinition {
   return {
     name: "add_cron_job",
     label: "Add Cron Job",
-    description: "Schedule a recurring task using cron syntax. Requires confirmation before saving. Example: '0 9 * * 1' runs every Monday at 9am.",
+    description: "ALWAYS use this tool to add cron jobs. Do NOT edit config JSON files directly. Saves a recurring scheduled task with validated cron syntax. Common schedules: '* * * * *' (every minute), '0 9 * * *' (daily 9am), '0 9 * * 1' (Mondays 9am), '*/5 * * * *' (every 5 min).",
     parameters: Type.Object({
       name: Type.String({
-        description: "Job name (lowercase, alphanumeric, hyphens, underscores)",
+        description: "Job name (lowercase, hyphens/underscores only, e.g. 'daily-hello', 'check_email')",
         pattern: "^[a-z0-9_-]{1,50}$",
       }),
       schedule: Type.String({
-        description: "Cron expression (e.g., '0 9 * * *' for daily at 9am)",
+        description: "Cron expression: minute hour day month weekday",
       }),
       prompt: Type.String({
-        description: "What to tell the agent to do when job runs",
+        description: "The message/instruction the agent will execute when the job fires",
         maxLength: 500,
       }),
       tier: Type.Optional(
         Type.Union([Type.Literal("triage"), Type.Literal("smart")], {
-          description: "Which agent tier handles this job",
+          description: "Which agent tier handles this job (default: smart)",
           default: "smart",
-        })
-      ),
-      confirmed: Type.Optional(
-        Type.Boolean({
-          description: "Set to true to confirm scheduling",
-          default: false,
         })
       ),
     }),
@@ -138,13 +134,11 @@ function createAddCronJobTool(
         schedule,
         prompt,
         tier = "smart",
-        confirmed = false,
       } = params as {
         name: string;
         schedule: string;
         prompt: string;
         tier?: ModelTier;
-        confirmed?: boolean;
       };
 
       const currentMode = ctx.currentMode || "personal";
@@ -172,55 +166,7 @@ function createAddCronJobTool(
           };
         }
 
-        // If not confirmed, show preview
-        if (!confirmed) {
-          try {
-            // Parse to get next 5 runs
-            const interval = CronExpressionParser.parse(schedule, {
-              tz: "America/New_York",
-            });
-
-            const nextRuns = [];
-            for (let i = 0; i < 5; i++) {
-              const next = interval.next();
-              if (next) {
-                nextRuns.push(next.toISOString());
-              }
-            }
-
-            const previewText = [
-              `I'd like to schedule a cron job:`,
-              ``,
-              `Name: ${name}`,
-              `Schedule: ${schedule}`,
-              `Tier: ${tier}`,
-              `Mode: ${currentMode}`,
-              `Prompt: ${prompt}`,
-              ``,
-              `Next 5 runs:`,
-              ...nextRuns.map((run, i) => `  ${i + 1}. ${run}`),
-              ``,
-              `Reply 'yes' to confirm or 'no' to cancel.`,
-            ].join("\n");
-
-            return {
-              content: [{ type: "text", text: previewText }],
-              details: {},
-            };
-          } catch (err) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Error parsing schedule: ${err instanceof Error ? err.message : String(err)}`,
-                },
-              ],
-              details: {},
-            };
-          }
-        }
-
-        // Confirmed - create the job
+        // Create the job
         const cronJob: CronJobConfig = {
           name,
           schedule,
@@ -229,9 +175,15 @@ function createAddCronJobTool(
           mode: currentMode,
         };
 
-        // Add to config and schedule
+        // Save to config
         await configManager.addCronJob(currentMode, cronJob);
-        scheduler.scheduleJob(cronJob);
+
+        // Register with running scheduler if available
+        let activated = false;
+        if (cronCallbacks) {
+          cronCallbacks.onAdded(cronJob);
+          activated = true;
+        }
 
         // Get next run time
         const interval = CronExpressionParser.parse(schedule, {
@@ -246,7 +198,7 @@ function createAddCronJobTool(
           content: [
             {
               type: "text",
-              text: `Cron job '${name}' scheduled successfully!\n\nNext run: ${nextRunStr}`,
+              text: `Cron job '${name}' saved${activated ? " and activated" : ""}!\n\nSchedule: ${schedule}\nPrompt: ${prompt}\nNext run: ${nextRunStr}`,
             },
           ],
           details: {},
@@ -269,36 +221,63 @@ function createAddCronJobTool(
 /**
  * Create list_cron_jobs tool.
  *
- * Lists all scheduled cron jobs with their next run times.
+ * Lists all configured cron jobs with their next run times.
  */
-function createListCronJobsTool(): ConfigToolDefinition {
+function createListCronJobsTool(
+  configManager: ConfigManager
+): ConfigToolDefinition {
   return {
     name: "list_cron_jobs",
     label: "List Cron Jobs",
-    description: "List all scheduled cron jobs with their schedules and next run times",
+    description: "List all configured cron jobs with their schedules and next run times",
     parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       try {
-        const jobs = scheduler.listJobs();
+        const currentMode = ctx.currentMode || "personal";
+        // Read crons from mode config file
+        const configPath = resolve(
+          process.cwd(),
+          "config",
+          `${currentMode}.json`
+        );
+        if (!existsSync(configPath)) {
+          return {
+            content: [{ type: "text", text: `No config found for mode '${currentMode}'.` }],
+            details: {},
+          };
+        }
+
+        const config = JSON.parse(readFileSync(configPath, "utf-8")) as ModeConfig;
+        const jobs = config.crons || [];
 
         if (jobs.length === 0) {
           return {
-            content: [{ type: "text", text: "No cron jobs scheduled." }],
+            content: [{ type: "text", text: "No cron jobs configured." }],
             details: {},
           };
         }
 
         const jobsList = [
-          `Scheduled cron jobs (${jobs.length}):`,
+          `Configured cron jobs (${jobs.length}):`,
           ``,
           ...jobs.map((job, i) => {
+            let nextRun = "Unknown";
+            try {
+              const interval = CronExpressionParser.parse(job.schedule, {
+                tz: "America/New_York",
+              });
+              const next = interval.next();
+              nextRun = next?.toISOString() ?? "No future runs";
+            } catch {
+              nextRun = "Error parsing schedule";
+            }
+
             return [
               `${i + 1}. ${job.name}`,
               `   Schedule: ${job.schedule}`,
-              `   Next run: ${job.nextRun}`,
+              `   Next run: ${nextRun}`,
               `   Mode: ${job.mode}`,
               `   Tier: ${job.tier}`,
-              `   Enabled: ${job.enabled}`,
             ].join("\n");
           }),
         ].join("\n");
@@ -328,34 +307,34 @@ function createListCronJobsTool(): ConfigToolDefinition {
  * Removes a scheduled cron job with confirmation.
  */
 function createRemoveCronJobTool(
-  configManager: ConfigManager
+  configManager: ConfigManager,
+  cronCallbacks?: CronCallbacks
 ): ConfigToolDefinition {
   return {
     name: "remove_cron_job",
     label: "Remove Cron Job",
-    description: "Remove a scheduled cron job. Requires confirmation.",
+    description: "ALWAYS use this tool to remove cron jobs. Do NOT edit config JSON files directly. Removes a scheduled cron job by name.",
     parameters: Type.Object({
       name: Type.String({
         description: "Name of the cron job to remove",
       }),
-      confirmed: Type.Optional(
-        Type.Boolean({
-          description: "Set to true to confirm removal",
-          default: false,
-        })
-      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const { name, confirmed = false } = params as {
-        name: string;
-        confirmed?: boolean;
-      };
-
+      const { name } = params as { name: string };
       const currentMode = ctx.currentMode || "personal";
 
       try {
-        // Check job exists
-        const job = scheduler.getJob(name);
+        // Check job exists in config
+        const configPath = resolve(
+          process.cwd(),
+          "config",
+          `${currentMode}.json`
+        );
+        let job: CronJobConfig | undefined;
+        if (existsSync(configPath)) {
+          const config = JSON.parse(readFileSync(configPath, "utf-8")) as ModeConfig;
+          job = (config.crons || []).find(c => c.name === name);
+        }
         if (!job) {
           return {
             content: [{ type: "text", text: `Cron job '${name}' not found.` }],
@@ -363,26 +342,17 @@ function createRemoveCronJobTool(
           };
         }
 
-        // If not confirmed, ask
-        if (!confirmed) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Remove cron job '${name}' (schedule: ${job.schedule})?\n\nReply 'yes' to confirm or 'no' to cancel.`,
-              },
-            ],
-            details: {},
-          };
-        }
-
-        // Confirmed - remove the job
-        scheduler.unscheduleJob(name);
+        // Remove from config
         await configManager.removeCronJob(currentMode, name);
+
+        // Unregister from running scheduler if available
+        if (cronCallbacks) {
+          cronCallbacks.onRemoved(name);
+        }
 
         return {
           content: [
-            { type: "text", text: `Cron job '${name}' removed successfully.` },
+            { type: "text", text: `Cron job '${name}' removed.` },
           ],
           details: {},
         };
@@ -663,20 +633,30 @@ function createGetConfigHistoryTool(
 }
 
 /**
+ * Callbacks for live cron job management (register/unregister with running scheduler).
+ */
+export interface CronCallbacks {
+  onAdded: (config: CronJobConfig) => void;
+  onRemoved: (name: string) => void;
+}
+
+/**
  * Create autonomy tools for agent self-configuration.
  *
  * @param configManager ConfigManager instance for mode config operations
  * @param preferencesManager Optional PreferencesManager for shortcuts
+ * @param cronCallbacks Optional callbacks to register jobs with running scheduler
  * @returns Array of autonomy tool definitions
  */
 export function createAutonomyTools(
   configManager: ConfigManager,
-  preferencesManager?: PreferencesManager
+  preferencesManager?: PreferencesManager,
+  cronCallbacks?: CronCallbacks
 ): ConfigToolDefinition[] {
   const tools: ConfigToolDefinition[] = [
-    createAddCronJobTool(configManager),
-    createListCronJobsTool(),
-    createRemoveCronJobTool(configManager),
+    createAddCronJobTool(configManager, cronCallbacks),
+    createListCronJobsTool(configManager),
+    createRemoveCronJobTool(configManager, cronCallbacks),
     createUpdateModeConfigTool(configManager),
     createGetConfigHistoryTool(configManager),
   ];

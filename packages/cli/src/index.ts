@@ -92,6 +92,21 @@ async function main(): Promise<void> {
     }
   }
 
+  // Wire up live cron callbacks so autonomy tools can add/remove jobs at runtime
+  orchestrator.setCronCallbacks({
+    onAdded: (config) => scheduler.addJob(config),
+    onRemoved: (name) => scheduler.removeJob(name),
+  });
+
+  // Wire up cron reply routing through the gateway
+  scheduler.setSendReply((channel, chatId, text) => gateway.sendToChannel(channel, chatId, text));
+
+  // Set default reply destination from allowed Telegram users (first user = owner)
+  const defaultChatId = process.env.TELEGRAM_ALLOWED_USERS?.split(",")[0]?.trim();
+  if (defaultChatId) {
+    scheduler.setDefaultReplyTo("telegram", defaultChatId);
+  }
+
   // Register scheduler tool so the agent can manage crons
   orchestrator.registerTool({
     name: "list_crons",

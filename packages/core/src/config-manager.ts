@@ -39,6 +39,10 @@ const ModeConfigSchema = Type.Object({
       prompt: Type.String(),
       tier: Type.Union([Type.Literal("triage"), Type.Literal("smart")]),
       mode: Type.String(),
+      replyTo: Type.Optional(Type.Object({
+        channel: Type.String(),
+        chatId: Type.String(),
+      })),
     })
   ),
   cwd: Type.Optional(Type.String()),

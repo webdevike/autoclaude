@@ -45,8 +45,6 @@ Key patterns established in v1.0:
 
 ### Tech Debt (from v1.0)
 
-- CronScheduler.executeJob() is a stub — planned for v1.1
-- Dual scheduler pattern (core singleton vs external Scheduler class)
 - CLI uses old @jarvis/integration-* packages alongside @jarvis/extensions/*
 
 ### Blockers/Concerns
