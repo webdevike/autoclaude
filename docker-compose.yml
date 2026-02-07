@@ -8,6 +8,7 @@ services:
     volumes:
       - ./config:/app/config
       - jarvis-data:/app/data
+      - ~/.claude/.credentials.json:/root/.claude/.credentials.json:ro
     logging:
       driver: json-file
       options:
