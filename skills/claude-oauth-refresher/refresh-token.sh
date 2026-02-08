@@ -1,7 +1,6 @@
 #!/bin/bash
 # refresh-token.sh - Claude OAuth token refresh for autoclaude/jarvis
-# Reads refresh token from macOS Keychain, calls Anthropic OAuth endpoint,
-# updates Keychain with new tokens.
+# Cross-platform: macOS (Keychain) + Linux (~/.claude/.credentials.json)
 # Usage: ./refresh-token.sh [--force]
 
 set -euo pipefail
@@ -18,9 +17,16 @@ CONFIG_FILE="$SCRIPT_DIR/claude-oauth-refresh-config.json"
 
 # Defaults
 DEFAULT_KEYCHAIN_SERVICE="Claude Code-credentials"
+DEFAULT_CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
 DEFAULT_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 DEFAULT_TOKEN_URL="https://console.anthropic.com/v1/oauth/token"
 DEFAULT_REFRESH_BUFFER=30
+
+# Detect platform
+PLATFORM="linux"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    PLATFORM="macos"
+fi
 
 # Load config or use defaults
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -31,6 +37,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
     NOTIFY_FAILURE=$(python3 -c "import json; print(str(json.load(open('$CONFIG_FILE')).get('notifications', {}).get('on_failure', True)).lower())")
 
     KEYCHAIN_SERVICE=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('keychain_service', ''))")
+    CREDENTIALS_FILE=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('credentials_file', ''))" | sed "s|^~|$HOME|")
     CLIENT_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('client_id', ''))")
     TOKEN_URL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('token_url', ''))")
 else
@@ -40,12 +47,14 @@ else
     NOTIFY_SUCCESS=true
     NOTIFY_FAILURE=true
     KEYCHAIN_SERVICE=""
+    CREDENTIALS_FILE=""
     CLIENT_ID=""
     TOKEN_URL=""
 fi
 
 # Apply defaults
 KEYCHAIN_SERVICE="${KEYCHAIN_SERVICE:-$DEFAULT_KEYCHAIN_SERVICE}"
+CREDENTIALS_FILE="${CREDENTIALS_FILE:-$DEFAULT_CREDENTIALS_FILE}"
 CLIENT_ID="${CLIENT_ID:-$DEFAULT_CLIENT_ID}"
 TOKEN_URL="${TOKEN_URL:-$DEFAULT_TOKEN_URL}"
 
@@ -102,73 +111,110 @@ error_exit() {
     exit 1
 }
 
-echo "=== Claude OAuth Token Refresh ==="
-log "Refresh started"
+# ─── Read credentials (platform-specific) ───
 
-# Step 1: Read tokens from Keychain
-log "Reading tokens from Keychain..."
+read_credentials_macos() {
+    log "Reading tokens from macOS Keychain..."
 
-# Find all accounts for the Claude Code credentials service
-ALL_ACCOUNTS=$(security dump-keychain 2>/dev/null | \
-    awk '/^class: "genp"/,/^keychain:/ {
-        if (/"acct"<blob>=/) {
-            gsub(/.*"acct"<blob>="/, "");
-            gsub(/".*/, "");
-            account=$0
-        }
-        if (/"svce"<blob>="'"$KEYCHAIN_SERVICE"'"/) {
-            print account
-        }
-    }' | sort -u)
+    ALL_ACCOUNTS=$(security dump-keychain 2>/dev/null | \
+        awk '/^class: "genp"/,/^keychain:/ {
+            if (/"acct"<blob>=/) {
+                gsub(/.*"acct"<blob>="/, "");
+                gsub(/".*/, "");
+                account=$0
+            }
+            if (/"svce"<blob>="'"$KEYCHAIN_SERVICE"'"/) {
+                print account
+            }
+        }' | sort -u)
 
-if [[ -z "$ALL_ACCOUNTS" ]]; then
-    error_exit "No '$KEYCHAIN_SERVICE' entries found in Keychain. Run: claude auth"
-fi
+    if [[ -z "$ALL_ACCOUNTS" ]]; then
+        error_exit "No '$KEYCHAIN_SERVICE' entries found in Keychain. Run: claude auth"
+    fi
 
-log "Found $(echo "$ALL_ACCOUNTS" | wc -l | tr -d ' ') keychain entry/entries"
+    log "Found $(echo "$ALL_ACCOUNTS" | wc -l | tr -d ' ') keychain entry/entries"
 
-# Find the entry with valid OAuth data
-KEYCHAIN_DATA=""
-KEYCHAIN_ACCOUNT=""
-FOUND=false
+    CRED_DATA=""
+    KEYCHAIN_ACCOUNT=""
 
-while IFS= read -r account; do
-    [[ -z "$account" ]] && continue
-    log "Checking account: $account"
+    while IFS= read -r account; do
+        [[ -z "$account" ]] && continue
+        log "Checking account: $account"
+        TEMP_DATA=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$account" -w 2>&1 || echo "")
 
-    TEMP_DATA=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$account" -w 2>&1 || echo "")
-
-    if [[ -n "$TEMP_DATA" ]]; then
-        # Check if data has refreshToken (supports both nested and flat structures)
-        HAS_REFRESH=$(echo "$TEMP_DATA" | python3 -c "
+        if [[ -n "$TEMP_DATA" ]]; then
+            HAS_REFRESH=$(echo "$TEMP_DATA" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-# Check flat structure first
 if 'refreshToken' in data and data['refreshToken']:
     print('flat')
-# Check nested under claudeAiOauth
 elif 'claudeAiOauth' in data and 'refreshToken' in data['claudeAiOauth'] and data['claudeAiOauth']['refreshToken']:
     print('nested')
 else:
     print('no')
 " 2>/dev/null || echo "no")
 
-        if [[ "$HAS_REFRESH" != "no" ]]; then
-            KEYCHAIN_DATA="$TEMP_DATA"
-            KEYCHAIN_ACCOUNT="$account"
-            FOUND=true
-            log "Found valid OAuth tokens (structure: $HAS_REFRESH) in account: $account"
-            break
+            if [[ "$HAS_REFRESH" != "no" ]]; then
+                CRED_DATA="$TEMP_DATA"
+                KEYCHAIN_ACCOUNT="$account"
+                log "Found valid OAuth tokens (structure: $HAS_REFRESH) in account: $account"
+                break
+            fi
         fi
-    fi
-done <<< "$ALL_ACCOUNTS"
+    done <<< "$ALL_ACCOUNTS"
 
-if [[ "$FOUND" == "false" ]]; then
-    error_exit "No keychain entry has valid OAuth tokens. Run: claude auth"
+    if [[ -z "$CRED_DATA" ]]; then
+        error_exit "No keychain entry has valid OAuth tokens. Run: claude auth"
+    fi
+
+    echo "$CRED_DATA"
+}
+
+read_credentials_linux() {
+    log "Reading tokens from $CREDENTIALS_FILE..."
+
+    if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+        error_exit "Credentials file not found: $CREDENTIALS_FILE. Run: claude auth"
+    fi
+
+    cat "$CREDENTIALS_FILE"
+}
+
+# ─── Write credentials (platform-specific) ───
+
+write_credentials_macos() {
+    local new_data="$1"
+    log "Updating macOS Keychain..."
+    security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" 2>/dev/null || true
+    security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$new_data" -U
+    log "Keychain updated"
+}
+
+write_credentials_linux() {
+    local new_data="$1"
+    log "Updating $CREDENTIALS_FILE..."
+    # Atomic write: write to temp file then move
+    local tmp_file="${CREDENTIALS_FILE}.tmp"
+    echo "$new_data" | python3 -c "import sys, json; json.dump(json.load(sys.stdin), open('$tmp_file', 'w'), indent=2)"
+    chmod 600 "$tmp_file"
+    mv "$tmp_file" "$CREDENTIALS_FILE"
+    log "Credentials file updated"
+}
+
+# ─── Main flow ───
+
+echo "=== Claude OAuth Token Refresh ==="
+log "Refresh started (platform: $PLATFORM)"
+
+# Step 1: Read current credentials
+if [[ "$PLATFORM" == "macos" ]]; then
+    CRED_DATA=$(read_credentials_macos)
+else
+    CRED_DATA=$(read_credentials_linux)
 fi
 
 # Parse tokens - handle both flat and nested structures
-PARSE_RESULT=$(echo "$KEYCHAIN_DATA" | python3 -c "
+PARSE_RESULT=$(echo "$CRED_DATA" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 if 'claudeAiOauth' in data and 'refreshToken' in data['claudeAiOauth']:
@@ -194,8 +240,14 @@ SCOPES_JSON=$(echo "$PARSE_RESULT" | python3 -c "import sys, json; import json a
 SUB_TYPE=$(echo "$PARSE_RESULT" | python3 -c "import sys, json; print(json.load(sys.stdin)['subscriptionType'])")
 RATE_TIER=$(echo "$PARSE_RESULT" | python3 -c "import sys, json; print(json.load(sys.stdin)['rateLimitTier'])")
 
-log "Using keychain account: $KEYCHAIN_ACCOUNT (structure: $STRUCTURE)"
-log "Current expiry: $(date -r $((CURRENT_EXPIRES / 1000)) '+%Y-%m-%d %H:%M:%S')"
+log "Token structure: $STRUCTURE"
+
+# date -r works differently on Linux vs macOS
+if [[ "$PLATFORM" == "macos" ]]; then
+    log "Current expiry: $(date -r $((CURRENT_EXPIRES / 1000)) '+%Y-%m-%d %H:%M:%S')"
+else
+    log "Current expiry: $(date -d @$((CURRENT_EXPIRES / 1000)) '+%Y-%m-%d %H:%M:%S')"
+fi
 
 # Check if refresh needed
 NOW_MS=$(($(date +%s) * 1000))
@@ -239,15 +291,17 @@ EXPIRES_IN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sy
 [[ -n "$NEW_REFRESH" ]] || error_exit "No refresh_token in response"
 
 NEW_EXPIRES_AT=$(($(date +%s) * 1000 + EXPIRES_IN * 1000))
-NEW_EXPIRES_TIME=$(date -r $((NEW_EXPIRES_AT / 1000)) '+%Y-%m-%d %H:%M:%S')
+
+if [[ "$PLATFORM" == "macos" ]]; then
+    NEW_EXPIRES_TIME=$(date -r $((NEW_EXPIRES_AT / 1000)) '+%Y-%m-%d %H:%M:%S')
+else
+    NEW_EXPIRES_TIME=$(date -d @$((NEW_EXPIRES_AT / 1000)) '+%Y-%m-%d %H:%M:%S')
+fi
 
 log "Received new tokens (expires: $NEW_EXPIRES_TIME, ${EXPIRES_IN}s / $((EXPIRES_IN / 3600))h)"
 
-# Step 3: Update Keychain
-log "Updating Keychain..."
-
-# Build new keychain data matching the original structure
-NEW_KEYCHAIN_DATA=$(python3 << PYEOF
+# Step 3: Build updated credential data
+NEW_CRED_DATA=$(python3 << PYEOF
 import json
 
 oauth_data = {
@@ -269,11 +323,13 @@ print(json.dumps(data))
 PYEOF
 )
 
-# Delete old + add new
-security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" 2>/dev/null || true
-security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$NEW_KEYCHAIN_DATA" -U
+# Step 4: Write credentials (platform-specific)
+if [[ "$PLATFORM" == "macos" ]]; then
+    write_credentials_macos "$NEW_CRED_DATA"
+else
+    write_credentials_linux "$NEW_CRED_DATA"
+fi
 
-log "Keychain updated"
 log "Refresh complete"
 
 notify "Claude token refreshed!

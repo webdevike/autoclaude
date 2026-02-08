@@ -1,6 +1,6 @@
 #!/bin/bash
 # install.sh - One-time setup for claude-oauth-refresher (autoclaude/jarvis)
-# Sets up launchd to refresh Claude OAuth tokens every 2 hours
+# Cross-platform: launchd (macOS) or systemd timer (Linux)
 
 set -e
 
@@ -14,13 +14,13 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/claude-oauth-refresh-config.json"
-PLIST_LABEL="com.jarvis.claude-oauth-refresher"
-PLIST_FILE="${PLIST_LABEL}.plist"
-LAUNCHAGENTS_DIR="$HOME/Library/LaunchAgents"
+
+PLATFORM="linux"
+[[ "$OSTYPE" == "darwin"* ]] && PLATFORM="macos"
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}  claude-oauth-refresher installer${NC}"
-echo -e "${BLUE}  (for autoclaude/jarvis)${NC}"
+echo -e "${BLUE}  (for autoclaude/jarvis - $PLATFORM)${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "${CYAN}Sets up automatic Claude OAuth token refresh every 2 hours.${NC}"
@@ -112,11 +112,17 @@ else
 fi
 echo ""
 
-# Step 4: Create launchd plist
-echo -e "${BLUE}[4/6]${NC} Creating launchd service..."
+# Step 4-6: Platform-specific scheduler setup
 mkdir -p "$SCRIPT_DIR/logs"
 
-cat > "$SCRIPT_DIR/$PLIST_FILE" << EOF
+if [[ "$PLATFORM" == "macos" ]]; then
+    # ─── macOS: launchd ───
+    PLIST_LABEL="com.jarvis.claude-oauth-refresher"
+    PLIST_FILE="${PLIST_LABEL}.plist"
+    LAUNCHAGENTS_DIR="$HOME/Library/LaunchAgents"
+
+    echo -e "${BLUE}[4/6]${NC} Creating launchd service..."
+    cat > "$SCRIPT_DIR/$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -145,33 +151,84 @@ cat > "$SCRIPT_DIR/$PLIST_FILE" << EOF
 </dict>
 </plist>
 EOF
-echo -e "${GREEN}✓${NC} Created plist"
-echo ""
+    echo -e "${GREEN}✓${NC} Created plist"
+    echo ""
 
-# Step 5: Install service
-echo -e "${BLUE}[5/6]${NC} Installing launchd service..."
-mkdir -p "$LAUNCHAGENTS_DIR"
+    echo -e "${BLUE}[5/6]${NC} Installing launchd service..."
+    mkdir -p "$LAUNCHAGENTS_DIR"
+    if launchctl list 2>/dev/null | grep -q "$PLIST_LABEL"; then
+        launchctl unload "$LAUNCHAGENTS_DIR/$PLIST_FILE" 2>/dev/null || true
+        echo "  Unloaded existing service"
+    fi
+    cp "$SCRIPT_DIR/$PLIST_FILE" "$LAUNCHAGENTS_DIR/$PLIST_FILE"
+    launchctl load "$LAUNCHAGENTS_DIR/$PLIST_FILE"
+    echo -e "${GREEN}✓${NC} Service loaded (runs every 2 hours)"
+    echo ""
 
-if launchctl list 2>/dev/null | grep -q "$PLIST_LABEL"; then
-    launchctl unload "$LAUNCHAGENTS_DIR/$PLIST_FILE" 2>/dev/null || true
-    echo "  Unloaded existing service"
-fi
+    echo -e "${BLUE}[6/6]${NC} Verifying..."
+    sleep 1
+    if launchctl list 2>/dev/null | grep -q "$PLIST_LABEL"; then
+        echo -e "${GREEN}✓${NC} Service is running"
+    else
+        echo -e "${YELLOW}⚠${NC} Service may not be loaded"
+    fi
 
-cp "$SCRIPT_DIR/$PLIST_FILE" "$LAUNCHAGENTS_DIR/$PLIST_FILE"
-launchctl load "$LAUNCHAGENTS_DIR/$PLIST_FILE"
-echo -e "${GREEN}✓${NC} Service loaded (runs every 2 hours)"
-echo ""
-
-# Step 6: Verify
-echo -e "${BLUE}[6/6]${NC} Verifying..."
-sleep 1
-if launchctl list 2>/dev/null | grep -q "$PLIST_LABEL"; then
-    echo -e "${GREEN}✓${NC} Service is running"
 else
-    echo -e "${YELLOW}⚠${NC} Service may not be loaded"
-fi
-echo ""
+    # ─── Linux: systemd user timer ───
+    SYSTEMD_DIR="$HOME/.config/systemd/user"
+    SERVICE_NAME="claude-oauth-refresher"
 
+    echo -e "${BLUE}[4/6]${NC} Creating systemd service + timer..."
+    mkdir -p "$SYSTEMD_DIR"
+
+    cat > "$SYSTEMD_DIR/${SERVICE_NAME}.service" << EOF
+[Unit]
+Description=Claude OAuth Token Refresher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${SCRIPT_DIR}/refresh-token.sh
+WorkingDirectory=${SCRIPT_DIR}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin
+
+[Install]
+WantedBy=default.target
+EOF
+
+    cat > "$SYSTEMD_DIR/${SERVICE_NAME}.timer" << EOF
+[Unit]
+Description=Refresh Claude OAuth tokens every 2 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    echo -e "${GREEN}✓${NC} Created service + timer"
+    echo ""
+
+    echo -e "${BLUE}[5/6]${NC} Enabling systemd timer..."
+    systemctl --user daemon-reload
+    systemctl --user enable "${SERVICE_NAME}.timer"
+    systemctl --user start "${SERVICE_NAME}.timer"
+    echo -e "${GREEN}✓${NC} Timer enabled (runs every 2 hours)"
+    echo ""
+
+    echo -e "${BLUE}[6/6]${NC} Verifying..."
+    if systemctl --user is-active "${SERVICE_NAME}.timer" &>/dev/null; then
+        echo -e "${GREEN}✓${NC} Timer is active"
+        systemctl --user list-timers "${SERVICE_NAME}.timer" --no-pager 2>/dev/null || true
+    else
+        echo -e "${YELLOW}⚠${NC} Timer may not be active"
+    fi
+fi
+
+echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}✓ Installation complete!${NC}"
 echo ""
@@ -181,7 +238,11 @@ echo ""
 echo "Commands:"
 echo "  Manual refresh: $SCRIPT_DIR/refresh-token.sh --force"
 echo "  View logs:      tail -f $SCRIPT_DIR/logs/claude-oauth-refresh.log"
-echo "  Check status:   launchctl list | grep jarvis"
+if [[ "$PLATFORM" == "macos" ]]; then
+    echo "  Check status:   launchctl list | grep jarvis"
+else
+    echo "  Check status:   systemctl --user status claude-oauth-refresher.timer"
+fi
 echo "  Uninstall:      $SCRIPT_DIR/uninstall.sh"
 echo "  Edit config:    $CONFIG_FILE"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

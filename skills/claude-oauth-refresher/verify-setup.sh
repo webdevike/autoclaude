@@ -1,5 +1,6 @@
 #!/bin/bash
 # verify-setup.sh - Pre-flight checks for claude-oauth-refresher
+# Cross-platform: macOS + Linux
 
 set -e
 
@@ -12,19 +13,20 @@ NC='\033[0m'
 ERRORS=0
 WARNINGS=0
 
+PLATFORM="linux"
+[[ "$OSTYPE" == "darwin"* ]] && PLATFORM="macos"
+
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}  claude-oauth-refresher verification${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# Check 1: macOS
+# Check 1: OS
 echo -n "Checking OS... "
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    echo -e "${GREEN}✓${NC} macOS $(sw_vers -productVersion)"
+if [[ "$PLATFORM" == "macos" ]]; then
+    echo -e "${GREEN}✓${NC} macOS $(sw_vers -productVersion) (Keychain mode)"
 else
-    echo -e "${RED}✗${NC} Not macOS (detected: $OSTYPE)"
-    echo "  This skill requires macOS for Keychain access"
-    ((ERRORS++))
+    echo -e "${GREEN}✓${NC} Linux $(uname -r) (file mode)"
 fi
 
 # Check 2: Claude CLI
@@ -33,9 +35,8 @@ if command -v claude &> /dev/null; then
     CLAUDE_VERSION=$(claude --version 2>&1 | head -n1 || echo "unknown")
     echo -e "${GREEN}✓${NC} Found ($CLAUDE_VERSION)"
 else
-    echo -e "${RED}✗${NC} Not found"
-    echo "  Install: brew install claude"
-    ((ERRORS++))
+    echo -e "${YELLOW}⚠${NC} Not found (not required if already authenticated)"
+    ((WARNINGS++))
 fi
 
 # Check 3: python3
@@ -43,8 +44,7 @@ echo -n "Checking python3... "
 if command -v python3 &> /dev/null; then
     echo -e "${GREEN}✓${NC} Found"
 else
-    echo -e "${RED}✗${NC} Not found"
-    echo "  Required for JSON parsing"
+    echo -e "${RED}✗${NC} Not found (required for JSON parsing)"
     ((ERRORS++))
 fi
 
@@ -57,30 +57,28 @@ else
     ((ERRORS++))
 fi
 
-# Check 5: Keychain credentials
-echo -n "Checking Keychain credentials... "
-SERVICE="Claude Code-credentials"
+# Check 5: Credentials (platform-specific)
+echo -n "Checking credentials... "
+if [[ "$PLATFORM" == "macos" ]]; then
+    SERVICE="Claude Code-credentials"
+    ALL_ACCOUNTS=$(security dump-keychain 2>/dev/null | \
+        awk '/^class: "genp"/,/^keychain:/ {
+            if (/"acct"<blob>=/) {
+                gsub(/.*"acct"<blob>="/, "");
+                gsub(/".*/, "");
+                account=$0
+            }
+            if (/"svce"<blob>="'"$SERVICE"'"/) {
+                print account
+            }
+        }' | sort -u)
 
-ALL_ACCOUNTS=$(security dump-keychain 2>/dev/null | \
-    awk '/^class: "genp"/,/^keychain:/ {
-        if (/"acct"<blob>=/) {
-            gsub(/.*"acct"<blob>="/, "");
-            gsub(/".*/, "");
-            account=$0
-        }
-        if (/"svce"<blob>="'"$SERVICE"'"/) {
-            print account
-        }
-    }' | sort -u)
-
-KEYCHAIN_FOUND=false
-VALID_ACCOUNT=""
-
-while IFS= read -r account; do
-    [[ -z "$account" ]] && continue
-    KEYCHAIN_DATA=$(security find-generic-password -s "$SERVICE" -a "$account" -w 2>/dev/null || echo "")
-    if [[ -n "$KEYCHAIN_DATA" ]]; then
-        HAS_TOKEN=$(echo "$KEYCHAIN_DATA" | python3 -c "
+    FOUND=false
+    while IFS= read -r account; do
+        [[ -z "$account" ]] && continue
+        KEYCHAIN_DATA=$(security find-generic-password -s "$SERVICE" -a "$account" -w 2>/dev/null || echo "")
+        if [[ -n "$KEYCHAIN_DATA" ]]; then
+            HAS_TOKEN=$(echo "$KEYCHAIN_DATA" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 if 'refreshToken' in data and data['refreshToken']:
@@ -90,20 +88,45 @@ elif 'claudeAiOauth' in data and 'refreshToken' in data['claudeAiOauth']:
 else:
     print('no')
 " 2>/dev/null || echo "no")
-        if [[ "$HAS_TOKEN" == "yes" ]]; then
-            KEYCHAIN_FOUND=true
-            VALID_ACCOUNT="$account"
-            break
+            if [[ "$HAS_TOKEN" == "yes" ]]; then
+                FOUND=true
+                echo -e "${GREEN}✓${NC} Keychain (account: $account)"
+                break
+            fi
         fi
-    fi
-done <<< "$ALL_ACCOUNTS"
+    done <<< "$ALL_ACCOUNTS"
 
-if [[ "$KEYCHAIN_FOUND" == "true" ]]; then
-    echo -e "${GREEN}✓${NC} Found (account: $VALID_ACCOUNT)"
+    if [[ "$FOUND" == "false" ]]; then
+        echo -e "${RED}✗${NC} No valid OAuth tokens in Keychain"
+        echo "  Run: claude auth"
+        ((ERRORS++))
+    fi
 else
-    echo -e "${RED}✗${NC} No valid OAuth tokens in Keychain"
-    echo "  Run: claude auth"
-    ((ERRORS++))
+    # Linux: check credentials file
+    CRED_FILE="$HOME/.claude/.credentials.json"
+    if [[ -f "$CRED_FILE" ]]; then
+        HAS_TOKEN=$(python3 -c "
+import json
+data = json.load(open('$CRED_FILE'))
+if 'refreshToken' in data and data['refreshToken']:
+    print('yes')
+elif 'claudeAiOauth' in data and 'refreshToken' in data['claudeAiOauth']:
+    print('yes')
+else:
+    print('no')
+" 2>/dev/null || echo "no")
+        if [[ "$HAS_TOKEN" == "yes" ]]; then
+            echo -e "${GREEN}✓${NC} Found ($CRED_FILE)"
+        else
+            echo -e "${RED}✗${NC} File exists but no valid refresh token"
+            echo "  Run: claude auth"
+            ((ERRORS++))
+        fi
+    else
+        echo -e "${RED}✗${NC} Not found: $CRED_FILE"
+        echo "  Run: claude auth"
+        ((ERRORS++))
+    fi
 fi
 
 # Check 6: Telegram config
