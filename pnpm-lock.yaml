@@ -104,12 +104,18 @@ importers:
       cron-parser:
         specifier: ^5.5.0
         version: 5.5.0
+      exa-js:
+        specifier: ^1.5.0
+        version: 1.10.2(ws@8.19.0)
       node-cron:
         specifier: ^3.0.3
         version: 3.0.3
       openai:
         specifier: ^6.18.0
         version: 6.18.0(ws@8.19.0)(zod@3.25.76)
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
     devDependencies:
       '@types/node-cron':
         specifier: ^3.0.11

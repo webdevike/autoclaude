@@ -13,9 +13,11 @@ import { createAutonomyTools } from "./tools/autonomy-tools.js";
 import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
+import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
 import type {
   AgentResponse,
   AgentSession,
+  Integration,
   Message,
   ModeConfig,
   StatusUpdate,
@@ -291,6 +293,9 @@ export class AgentOrchestrator {
   // Claude Code session IDs per user (for conversation continuity)
   private claudeCodeSessions: Map<string, string> = new Map();
 
+  // Integrations for MCP bridge (set by CLI)
+  private integrations: Integration[] = [];
+
   // Cached skill docs from .pi/skills/*/SKILL.md (loaded once)
   private skillDocsCache: string | null = null;
 
@@ -316,6 +321,12 @@ export class AgentOrchestrator {
   /** Get cron callbacks (used by autonomy tools) */
   getCronCallbacks() {
     return this.cronCallbacks;
+  }
+
+  /** Set initialized integrations for MCP bridge (called by CLI) */
+  setIntegrations(integrations: Integration[]): void {
+    this.integrations = integrations;
+    console.log(`[orchestrator] Registered ${integrations.length} integrations for MCP bridge`);
   }
 
   /** Load .pi/skills SKILL.md files and cache as a combined string */
@@ -665,16 +676,44 @@ export class AgentOrchestrator {
     // Build system prompt with skill docs so Claude knows about integrations
     const systemPrompt = modeConfig.systemPrompt + this.getSkillDocs();
 
+    // Build MCP server with integration + autonomy tools
+    const preferencesManager = this.getPreferencesManager(msg.sender);
+    const mcpServer = this.integrations.length > 0 || this.cronCallbacks
+      ? createJarvisMcpServer({
+          integrations: this.integrations,
+          configManager: this.configManager,
+          preferencesManager,
+          cronCallbacks: this.cronCallbacks,
+          currentMode: modeConfig.mode,
+        })
+      : undefined;
+
+    // Auto-allow all MCP tool names
+    const baseAllowed = modeConfig.claudeCode?.allowedTools ?? [];
+    const mcpToolNames = mcpServer
+      ? getJarvisToolNames(
+          this.integrations,
+          !!process.env.EXA_API_KEY,
+          !!preferencesManager,
+        )
+      : [];
+    const allowedTools = [...baseAllowed, ...mcpToolNames];
+
+    const mcpServers = mcpServer
+      ? { [MCP_SERVER_NAME]: mcpServer }
+      : undefined;
+
     try {
       const result = await runClaudeCode({
         prompt: msg.text,
         systemPrompt,
         sessionId: existingSessionId,
-        allowedTools: modeConfig.claudeCode?.allowedTools,
+        allowedTools,
         tools: modeConfig.claudeCode?.tools,
         permissionMode: modeConfig.claudeCode?.permissionMode,
         maxTurns: modeConfig.claudeCode?.maxTurns,
         cwd,
+        mcpServers,
         onProgress,
       });
 
@@ -713,11 +752,12 @@ export class AgentOrchestrator {
           const result = await runClaudeCode({
             prompt: msg.text,
             systemPrompt,
-            allowedTools: modeConfig.claudeCode?.allowedTools,
+            allowedTools,
             tools: modeConfig.claudeCode?.tools,
             permissionMode: modeConfig.claudeCode?.permissionMode,
             maxTurns: modeConfig.claudeCode?.maxTurns,
             cwd,
+            mcpServers,
             onProgress,
           });
 

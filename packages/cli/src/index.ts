@@ -67,6 +67,9 @@ async function main(): Promise<void> {
     }
   }
 
+  // Pass initialized integrations to orchestrator for MCP bridge (Claude Code SDK)
+  orchestrator.setIntegrations(integrations);
+
   // --- Set up gateway ---
   const gateway = new Gateway(orchestrator, {
     modes,

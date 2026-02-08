@@ -6,6 +6,7 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { StreamProgressEvent } from "./types.js";
 
 export interface ClaudeCodeConfig {
@@ -17,6 +18,7 @@ export interface ClaudeCodeConfig {
   permissionMode?: "default" | "bypassPermissions" | "acceptEdits";
   cwd?: string;
   maxTurns?: number;
+  mcpServers?: Record<string, McpServerConfig>;
   onProgress?: (event: StreamProgressEvent) => void;
 }
 
@@ -41,6 +43,7 @@ export async function runClaudeCode(
     permissionMode,
     cwd,
     maxTurns,
+    mcpServers,
     onProgress,
   } = config;
 
@@ -58,6 +61,7 @@ export async function runClaudeCode(
     permissionMode,
     allowDangerouslySkipPermissions: false,
     resume: sessionId,
+    mcpServers,
     systemPrompt: systemPrompt
       ? { type: "preset" as const, preset: "claude_code" as const, append: systemPrompt }
       : undefined,

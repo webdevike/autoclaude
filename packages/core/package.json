@@ -25,7 +25,9 @@
     "@sinclair/typebox": "^0.34.48",
     "cron-parser": "^5.5.0",
     "node-cron": "^3.0.3",
-    "openai": "^6.18.0"
+    "exa-js": "^1.5.0",
+    "openai": "^6.18.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node-cron": "^3.0.11",
