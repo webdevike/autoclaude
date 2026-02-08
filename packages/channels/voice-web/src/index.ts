@@ -2,7 +2,33 @@ import type { Channel, Message } from "@jarvis/core";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { html } from "./ui.js";
+
+interface DinnerEntry {
+  date: string;
+  description: string;
+  logged_at: string;
+}
+
+const DINNERS_PATH = resolve(
+  process.env.JARVIS_DATA_DIR ?? "/app/data",
+  "dinners.json",
+);
+
+function loadDinners(): DinnerEntry[] {
+  try {
+    return JSON.parse(readFileSync(DINNERS_PATH, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+function saveDinners(dinners: DinnerEntry[]): void {
+  mkdirSync(resolve(DINNERS_PATH, ".."), { recursive: true });
+  writeFileSync(DINNERS_PATH, JSON.stringify(dinners, null, 2));
+}
 
 export interface VoiceWebChannelOptions {
   port: number;
@@ -77,6 +103,54 @@ export class VoiceWebChannel implements Channel {
                     required: ["query"],
                   },
                 },
+                {
+                  type: "function",
+                  name: "log_dinner",
+                  description:
+                    "Log what was eaten for dinner. Call this whenever the user mentions what they had or are having for dinner, e.g. 'We had tacos tonight' or 'Dinner was salmon and rice'.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      description: {
+                        type: "string",
+                        description:
+                          "What was eaten, e.g. 'Tacos with guac and rice'",
+                      },
+                      date: {
+                        type: "string",
+                        description:
+                          "Date in YYYY-MM-DD format. Defaults to today if not specified.",
+                      },
+                    },
+                    required: ["description"],
+                  },
+                },
+                {
+                  type: "function",
+                  name: "recall_dinners",
+                  description:
+                    "Look up past dinners. Use when the user asks what they had for dinner on a specific day, this week, or recently. Also use for questions like 'have we had pasta lately?'",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      date: {
+                        type: "string",
+                        description:
+                          "Specific date to look up in YYYY-MM-DD format",
+                      },
+                      days: {
+                        type: "number",
+                        description:
+                          "Number of days to look back (default 7)",
+                      },
+                      query: {
+                        type: "string",
+                        description:
+                          "Optional keyword to filter by, e.g. 'pasta' or 'chicken'",
+                      },
+                    },
+                  },
+                },
               ],
             }),
           },
@@ -125,6 +199,59 @@ export class VoiceWebChannel implements Channel {
           }));
 
           return c.json({ result: results });
+        }
+
+        if (name === "log_dinner") {
+          const { description, date } = args as {
+            description: string;
+            date?: string;
+          };
+          const dinners = loadDinners();
+          const entry: DinnerEntry = {
+            date: date ?? new Date().toISOString().slice(0, 10),
+            description,
+            logged_at: new Date().toISOString(),
+          };
+          dinners.push(entry);
+          saveDinners(dinners);
+          console.log(`[voice-web] Logged dinner: ${entry.date} — ${description}`);
+          return c.json({ result: `Logged dinner for ${entry.date}: ${description}` });
+        }
+
+        if (name === "recall_dinners") {
+          const { date, days, query } = args as {
+            date?: string;
+            days?: number;
+            query?: string;
+          };
+          let dinners = loadDinners();
+
+          if (date) {
+            dinners = dinners.filter((d) => d.date === date);
+          } else {
+            const lookback = days ?? 7;
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - lookback);
+            const cutoffStr = cutoff.toISOString().slice(0, 10);
+            dinners = dinners.filter((d) => d.date >= cutoffStr);
+          }
+
+          if (query) {
+            const q = query.toLowerCase();
+            dinners = dinners.filter((d) =>
+              d.description.toLowerCase().includes(q),
+            );
+          }
+
+          if (dinners.length === 0) {
+            return c.json({ result: "No dinner entries found for that period." });
+          }
+
+          const summary = dinners
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map((d) => `${d.date}: ${d.description}`)
+            .join("\n");
+          return c.json({ result: summary });
         }
 
         return c.json({ error: `Unknown tool: ${name}` }, 400);
