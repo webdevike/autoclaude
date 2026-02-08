@@ -111,9 +111,15 @@ error_exit() {
     exit 1
 }
 
-# ─── Read credentials (platform-specific) ───
+# ─── Main flow ───
 
-read_credentials_macos() {
+echo "=== Claude OAuth Token Refresh ==="
+log "Refresh started (platform: $PLATFORM)"
+
+# Step 1: Read current credentials
+KEYCHAIN_ACCOUNT=""
+
+if [[ "$PLATFORM" == "macos" ]]; then
     log "Reading tokens from macOS Keychain..."
 
     ALL_ACCOUNTS=$(security dump-keychain 2>/dev/null | \
@@ -135,8 +141,6 @@ read_credentials_macos() {
     log "Found $(echo "$ALL_ACCOUNTS" | wc -l | tr -d ' ') keychain entry/entries"
 
     CRED_DATA=""
-    KEYCHAIN_ACCOUNT=""
-
     while IFS= read -r account; do
         [[ -z "$account" ]] && continue
         log "Checking account: $account"
@@ -166,51 +170,12 @@ else:
     if [[ -z "$CRED_DATA" ]]; then
         error_exit "No keychain entry has valid OAuth tokens. Run: claude auth"
     fi
-
-    echo "$CRED_DATA"
-}
-
-read_credentials_linux() {
+else
     log "Reading tokens from $CREDENTIALS_FILE..."
-
     if [[ ! -f "$CREDENTIALS_FILE" ]]; then
         error_exit "Credentials file not found: $CREDENTIALS_FILE. Run: claude auth"
     fi
-
-    cat "$CREDENTIALS_FILE"
-}
-
-# ─── Write credentials (platform-specific) ───
-
-write_credentials_macos() {
-    local new_data="$1"
-    log "Updating macOS Keychain..."
-    security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" 2>/dev/null || true
-    security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$new_data" -U
-    log "Keychain updated"
-}
-
-write_credentials_linux() {
-    local new_data="$1"
-    log "Updating $CREDENTIALS_FILE..."
-    # Atomic write: write to temp file then move
-    local tmp_file="${CREDENTIALS_FILE}.tmp"
-    echo "$new_data" | python3 -c "import sys, json; json.dump(json.load(sys.stdin), open('$tmp_file', 'w'), indent=2)"
-    chmod 600 "$tmp_file"
-    mv "$tmp_file" "$CREDENTIALS_FILE"
-    log "Credentials file updated"
-}
-
-# ─── Main flow ───
-
-echo "=== Claude OAuth Token Refresh ==="
-log "Refresh started (platform: $PLATFORM)"
-
-# Step 1: Read current credentials
-if [[ "$PLATFORM" == "macos" ]]; then
-    CRED_DATA=$(read_credentials_macos)
-else
-    CRED_DATA=$(read_credentials_linux)
+    CRED_DATA=$(cat "$CREDENTIALS_FILE")
 fi
 
 # Parse tokens - handle both flat and nested structures
@@ -325,9 +290,22 @@ PYEOF
 
 # Step 4: Write credentials (platform-specific)
 if [[ "$PLATFORM" == "macos" ]]; then
-    write_credentials_macos "$NEW_CRED_DATA"
+    log "Updating macOS Keychain..."
+    security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" 2>/dev/null || true
+    security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$NEW_CRED_DATA" -U
+    log "Keychain updated"
 else
-    write_credentials_linux "$NEW_CRED_DATA"
+    log "Updating $CREDENTIALS_FILE..."
+    TMP_CRED="${CREDENTIALS_FILE}.tmp"
+    printf '%s' "$NEW_CRED_DATA" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+with open('${TMP_CRED}', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+    chmod 600 "$TMP_CRED"
+    mv "$TMP_CRED" "$CREDENTIALS_FILE"
+    log "Credentials file updated"
 fi
 
 log "Refresh complete"
