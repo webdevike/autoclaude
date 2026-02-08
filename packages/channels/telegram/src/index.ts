@@ -207,40 +207,18 @@ export class TelegramChannel implements Channel {
 
     // Guard against empty text - Telegram rejects empty messages
     const safeText = text?.trim() || "...";
-    const formatted = toTelegramMarkdown(safeText);
 
-    const chunks = splitMessage(formatted, 4096);
+    // Use plain text for streaming edits — partial markdown is invalid MarkdownV2
+    // The final send() call will apply proper formatting
+    const truncated = safeText.length > 4096 ? safeText.slice(0, 4093) + "..." : safeText;
     try {
-      // Edit the placeholder with the first chunk
       await this.api("editMessageText", {
         chat_id: Number(chatId),
         message_id: Number(messageId),
-        text: chunks[0],
-        parse_mode: "MarkdownV2",
+        text: truncated,
       });
-      // Send remaining chunks as new messages
-      for (let i = 1; i < chunks.length; i++) {
-        await this.api("sendMessage", {
-          chat_id: Number(chatId),
-          text: chunks[i],
-          parse_mode: "MarkdownV2",
-        });
-      }
     } catch {
-      // Fallback to plain text
-      console.warn("[telegram] MarkdownV2 parse failed in edit, falling back to plain text");
-      const plainChunks = splitMessage(safeText, 4096);
-      await this.api("editMessageText", {
-        chat_id: Number(chatId),
-        message_id: Number(messageId),
-        text: plainChunks[0],
-      });
-      for (let i = 1; i < plainChunks.length; i++) {
-        await this.api("sendMessage", {
-          chat_id: Number(chatId),
-          text: plainChunks[i],
-        });
-      }
+      // Silently ignore edit failures during streaming (message unchanged, rate limit, etc.)
     }
   }
 
