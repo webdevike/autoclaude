@@ -13,6 +13,7 @@ import {
 import type { ModeConfig, Integration } from "@jarvis/core";
 import { Gateway } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
+import { VoiceWebChannel } from "@jarvis/channel-voice-web";
 
 import { NotionIntegration } from "@jarvis/integration-notion";
 import { LinearIntegration } from "@jarvis/integration-linear";
@@ -86,6 +87,19 @@ async function main(): Promise<void> {
     console.warn("[channels] TELEGRAM_BOT_TOKEN not set, Telegram disabled.");
   }
 
+  // --- Voice Web channel (OpenAI Realtime) ---
+  if (process.env.OPENAI_API_KEY) {
+    const activeModeConfig = modes.find(m => m.mode === defaultMode) ?? modes[0];
+    gateway.registerChannel(new VoiceWebChannel({
+      port: parseInt(process.env.VOICE_WEB_PORT ?? "3000", 10),
+      openaiApiKey: process.env.OPENAI_API_KEY,
+      systemPrompt: activeModeConfig.systemPrompt,
+      voice: process.env.VOICE_WEB_VOICE ?? "ash",
+      model: process.env.VOICE_WEB_MODEL ?? "gpt-4o-realtime-preview",
+    }));
+  } else {
+    console.warn("[channels] OPENAI_API_KEY not set, Voice Web disabled.");
+  }
 
   // --- Start scheduler ---
   const scheduler = new Scheduler(orchestrator);

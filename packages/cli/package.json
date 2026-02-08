@@ -17,6 +17,7 @@
     "@jarvis/core": "workspace:*",
     "@jarvis/gateway": "workspace:*",
     "@jarvis/channel-telegram": "workspace:*",
+    "@jarvis/channel-voice-web": "workspace:*",
 
     "@jarvis/integration-notion": "workspace:*",
     "@jarvis/integration-linear": "workspace:*",

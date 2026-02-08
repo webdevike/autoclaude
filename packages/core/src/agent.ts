@@ -514,13 +514,15 @@ export class AgentOrchestrator {
     try {
       return await this.delegateToClaudeCode(msg, modeConfig, onProgress);
     } catch (err) {
-      console.warn(
-        `[orchestrator] Claude Code failed, falling back to pi-ai:`,
-        err instanceof Error ? err.message : err,
-      );
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[orchestrator] Claude Code failed:`, errorMsg);
+      // Pi-AI fallback disabled — Claude Code only
+      return { text: `Sorry, I hit an error: ${errorMsg}` };
     }
 
-    // Fallback: Pi-AI smart agent
+    // Fallback: Pi-AI smart agent (currently disabled — Claude Code only)
+    // To re-enable: remove the early return above and uncomment below
+    /*
     onProgress?.({ type: "status", text: "Falling back to smart agent..." });
 
     const history = sessionManager.loadSession(50);
@@ -530,6 +532,7 @@ export class AgentOrchestrator {
       .join("\n");
 
     return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
+    */
   }
 
   /** Fallback: delegate work to a smart agent using Pi SDK */
