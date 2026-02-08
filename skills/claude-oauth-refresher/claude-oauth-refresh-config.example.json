@@ -1,0 +1,14 @@
+{
+  "refresh_buffer_minutes": 30,
+  "log_file": "~/Code/autoclaude/skills/claude-oauth-refresher/logs/claude-oauth-refresh.log",
+  "keychain_service": "Claude Code-credentials",
+  "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+  "token_url": "https://console.anthropic.com/v1/oauth/token",
+  "notifications": {
+    "on_start": false,
+    "on_success": false,
+    "on_failure": true
+  },
+  "telegram_bot_token": "",
+  "telegram_chat_id": ""
+}
