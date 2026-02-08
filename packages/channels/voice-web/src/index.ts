@@ -151,6 +151,55 @@ export class VoiceWebChannel implements Channel {
                     },
                   },
                 },
+                {
+                  type: "function",
+                  name: "update_dinner",
+                  description:
+                    "Update/correct a dinner entry. Use when the user says something like 'actually we had pizza not tacos on Monday' or 'change last night's dinner to burgers'.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      date: {
+                        type: "string",
+                        description:
+                          "Date of the dinner to update in YYYY-MM-DD format",
+                      },
+                      old_description: {
+                        type: "string",
+                        description:
+                          "Keyword from the existing entry to match, if multiple entries exist for that date",
+                      },
+                      new_description: {
+                        type: "string",
+                        description:
+                          "The corrected dinner description",
+                      },
+                    },
+                    required: ["date", "new_description"],
+                  },
+                },
+                {
+                  type: "function",
+                  name: "delete_dinner",
+                  description:
+                    "Delete a dinner entry. Use when the user wants to remove an entry, e.g. 'delete dinner for Monday' or 'remove that wrong entry'.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      date: {
+                        type: "string",
+                        description:
+                          "Date of the dinner to delete in YYYY-MM-DD format",
+                      },
+                      description: {
+                        type: "string",
+                        description:
+                          "Optional keyword to match if multiple entries exist for that date",
+                      },
+                    },
+                    required: ["date"],
+                  },
+                },
               ],
             }),
           },
@@ -252,6 +301,53 @@ export class VoiceWebChannel implements Channel {
             .map((d) => `${d.date}: ${d.description}`)
             .join("\n");
           return c.json({ result: summary });
+        }
+
+        if (name === "update_dinner") {
+          const { date, old_description, new_description } = args as {
+            date: string;
+            old_description?: string;
+            new_description: string;
+          };
+          const dinners = loadDinners();
+          const idx = dinners.findIndex((d) => {
+            if (d.date !== date) return false;
+            if (old_description) {
+              return d.description.toLowerCase().includes(old_description.toLowerCase());
+            }
+            return true;
+          });
+          if (idx === -1) {
+            return c.json({ result: `No dinner entry found for ${date}.` });
+          }
+          const old = dinners[idx].description;
+          dinners[idx].description = new_description;
+          dinners[idx].logged_at = new Date().toISOString();
+          saveDinners(dinners);
+          console.log(`[voice-web] Updated dinner ${date}: "${old}" → "${new_description}"`);
+          return c.json({ result: `Updated ${date}: "${old}" → "${new_description}"` });
+        }
+
+        if (name === "delete_dinner") {
+          const { date, description } = args as {
+            date: string;
+            description?: string;
+          };
+          const dinners = loadDinners();
+          const idx = dinners.findIndex((d) => {
+            if (d.date !== date) return false;
+            if (description) {
+              return d.description.toLowerCase().includes(description.toLowerCase());
+            }
+            return true;
+          });
+          if (idx === -1) {
+            return c.json({ result: `No dinner entry found for ${date}.` });
+          }
+          const removed = dinners.splice(idx, 1)[0];
+          saveDinners(dinners);
+          console.log(`[voice-web] Deleted dinner ${date}: "${removed.description}"`);
+          return c.json({ result: `Deleted dinner for ${date}: "${removed.description}"` });
         }
 
         return c.json({ error: `Unknown tool: ${name}` }, 400);
