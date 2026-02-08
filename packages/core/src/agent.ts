@@ -699,6 +699,12 @@ export class AgentOrchestrator {
       : [];
     const allowedTools = [...baseAllowed, ...mcpToolNames];
 
+    // If tools whitelist is set, merge MCP tool names so they're visible
+    const configTools = modeConfig.claudeCode?.tools;
+    const tools = configTools && mcpToolNames.length > 0
+      ? [...configTools, ...mcpToolNames]
+      : configTools;
+
     const mcpServers = mcpServer
       ? { [MCP_SERVER_NAME]: mcpServer }
       : undefined;
@@ -709,7 +715,7 @@ export class AgentOrchestrator {
         systemPrompt,
         sessionId: existingSessionId,
         allowedTools,
-        tools: modeConfig.claudeCode?.tools,
+        tools,
         permissionMode: modeConfig.claudeCode?.permissionMode,
         maxTurns: modeConfig.claudeCode?.maxTurns,
         cwd,
@@ -753,7 +759,7 @@ export class AgentOrchestrator {
             prompt: msg.text,
             systemPrompt,
             allowedTools,
-            tools: modeConfig.claudeCode?.tools,
+            tools,
             permissionMode: modeConfig.claudeCode?.permissionMode,
             maxTurns: modeConfig.claudeCode?.maxTurns,
             cwd,

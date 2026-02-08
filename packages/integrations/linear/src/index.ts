@@ -23,14 +23,15 @@ export class LinearIntegration implements Integration {
         if (!this.client) return "Linear not initialized";
         const issues = await this.client.issueSearch({ query: params.query as string });
         const nodes = issues.nodes.slice(0, 10);
-        return JSON.stringify(
-          nodes.map((i) => ({
+        const results = await Promise.all(
+          nodes.map(async (i) => ({
             id: i.identifier,
             title: i.title,
-            state: i.state?.then((s) => s.name),
+            state: await i.state?.then((s) => s.name),
             priority: i.priority,
           })),
         );
+        return JSON.stringify(results);
       },
     },
     {
@@ -99,19 +100,16 @@ export class LinearIntegration implements Integration {
       execute: async () => {
         if (!this.client) return "Linear not initialized";
         const me = await this.client.viewer;
-        const issues = await me.assignedIssues({
-          first: 20,
-          orderBy: LinearClient.prototype.constructor
-            ? undefined
-            : undefined,
-        });
-        return JSON.stringify(
-          issues.nodes.map((i) => ({
+        const issues = await me.assignedIssues({ first: 20 });
+        const results = await Promise.all(
+          issues.nodes.map(async (i) => ({
             id: i.identifier,
             title: i.title,
+            state: await i.state?.then((s) => s.name),
             priority: i.priority,
           })),
         );
+        return JSON.stringify(results);
       },
     },
   ];

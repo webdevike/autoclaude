@@ -23,14 +23,21 @@ export const MCP_SERVER_NAME = "jarvis-tools";
  * string, number, boolean with optional required arrays.
  */
 function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodType {
+  const desc = prop.description as string | undefined;
   switch (prop.type) {
-    case "number":
-      return z.number().optional();
-    case "boolean":
-      return z.boolean().optional();
+    case "number": {
+      const base = z.number().optional();
+      return desc ? base.describe(desc) : base;
+    }
+    case "boolean": {
+      const base = z.boolean().optional();
+      return desc ? base.describe(desc) : base;
+    }
     case "string":
-    default:
-      return z.string().optional();
+    default: {
+      const base = z.string().optional();
+      return desc ? base.describe(desc) : base;
+    }
   }
 }
 
@@ -50,19 +57,26 @@ function jsonSchemaToZodShape(
   for (const [key, prop] of Object.entries(properties)) {
     const base = jsonSchemaPropertyToZod(prop);
     // If not required, keep as optional (already is); if required, unwrap
+    const desc = prop.description as string | undefined;
     if (required.includes(key)) {
-      // Build a required version
+      // Build a required version with description
       switch (prop.type) {
-        case "number":
-          shape[key] = z.number();
+        case "number": {
+          const r = z.number();
+          shape[key] = desc ? r.describe(desc) : r;
           break;
-        case "boolean":
-          shape[key] = z.boolean();
+        }
+        case "boolean": {
+          const r = z.boolean();
+          shape[key] = desc ? r.describe(desc) : r;
           break;
+        }
         case "string":
-        default:
-          shape[key] = z.string();
+        default: {
+          const r = z.string();
+          shape[key] = desc ? r.describe(desc) : r;
           break;
+        }
       }
     } else {
       shape[key] = base;
