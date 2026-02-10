@@ -19,6 +19,9 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.34",
     "@jarvis/extensions": "workspace:*",
+    "@jarvis/integration-notion": "workspace:*",
+    "@jarvis/integration-linear": "workspace:*",
+    "@jarvis/integration-gmail": "workspace:*",
     "@mariozechner/pi-agent-core": "^0.52.0",
     "@mariozechner/pi-ai": "^0.52.2",
     "@mariozechner/pi-coding-agent": "^0.52.3",

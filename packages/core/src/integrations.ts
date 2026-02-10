@@ -26,8 +26,7 @@ export async function createIntegrations(): Promise<IntegrationRegistry> {
 
   // Notion
   try {
-    // @ts-expect-error — resolved at runtime by consuming packages (avoids circular dep)
-    const { NotionIntegration } = await import("@jarvis/integration-notion") as { NotionIntegration: new () => Integration };
+    const { NotionIntegration } = await import("@jarvis/integration-notion");
     const notion = new NotionIntegration();
     await notion.initialize({});
     integrations.push(notion);
@@ -38,8 +37,7 @@ export async function createIntegrations(): Promise<IntegrationRegistry> {
 
   // Linear
   try {
-    // @ts-expect-error — resolved at runtime by consuming packages (avoids circular dep)
-    const { LinearIntegration } = await import("@jarvis/integration-linear") as { LinearIntegration: new () => Integration };
+    const { LinearIntegration } = await import("@jarvis/integration-linear");
     const linear = new LinearIntegration();
     await linear.initialize({});
     integrations.push(linear);
@@ -50,8 +48,7 @@ export async function createIntegrations(): Promise<IntegrationRegistry> {
 
   // Gmail
   try {
-    // @ts-expect-error — resolved at runtime by consuming packages (avoids circular dep)
-    const { GmailIntegration } = await import("@jarvis/integration-gmail") as { GmailIntegration: new () => Integration };
+    const { GmailIntegration } = await import("@jarvis/integration-gmail");
     const gmail = new GmailIntegration();
     await gmail.initialize({});
     integrations.push(gmail);
