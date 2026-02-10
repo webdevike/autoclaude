@@ -26,6 +26,9 @@ import dotenv from "dotenv";
 import { AccessToken } from "livekit-server-sdk";
 
 import { createIntegrations } from "@jarvis/core";
+import { NotionIntegration } from "@jarvis/integration-notion";
+import { LinearIntegration } from "@jarvis/integration-linear";
+import { GmailIntegration } from "@jarvis/integration-gmail";
 
 import { bridgeIntegrationTools, buildExaTool } from "./tools.js";
 
@@ -40,7 +43,11 @@ dotenv.config({ path: resolve(__dirname, "..", ".env.local") });
 let jarvisToolCtx: llm.ToolContext = {};
 
 async function initializeIntegrations(): Promise<void> {
-  const registry = await createIntegrations();
+  const registry = await createIntegrations([
+    NotionIntegration,
+    LinearIntegration,
+    GmailIntegration,
+  ]);
 
   // Bridge integration tools into ToolContext
   jarvisToolCtx = bridgeIntegrationTools(registry.integrations);
