@@ -1,5 +1,4 @@
-import type { Channel, Message } from "@jarvis/core";
-import telegramifyMarkdown from "telegramify-markdown";
+import type { Channel, Message, InlineKeyboardMarkup, CallbackQuery } from "@jarvis/core";
 
 interface TelegramUpdate {
   update_id: number;
@@ -9,6 +8,12 @@ interface TelegramUpdate {
     chat: { id: number; type: string };
     date: number;
     text?: string;
+  };
+  callback_query?: {
+    id: string;
+    from: { id: number; username?: string };
+    data?: string;
+    message?: { message_id: number; chat: { id: number } };
   };
 }
 
@@ -31,6 +36,7 @@ export class TelegramChannel implements Channel {
   private offset = 0;
   private pollInterval = 2000;
   private processedUpdates = new Set<number>(); // Track processed update IDs to prevent duplicates
+  private callbackQueryHandler?: (query: CallbackQuery) => Promise<void>;
 
   constructor(token: string, allowedUsers?: string[]) {
     this.token = token;
@@ -127,6 +133,15 @@ export class TelegramChannel implements Channel {
           if (this.processedUpdates.size > 100) {
             const oldest = Math.min(...this.processedUpdates);
             this.processedUpdates.delete(oldest);
+          }
+
+          // Handle callback queries (inline keyboard button presses)
+          if (update.callback_query && this.callbackQueryHandler) {
+            const cq = update.callback_query;
+            // Answer the callback query to remove the loading indicator
+            await this.api("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
+            await this.callbackQueryHandler(cq as CallbackQuery);
+            continue;
           }
 
           if (!update.message?.text) continue;
@@ -234,7 +249,7 @@ export class TelegramChannel implements Channel {
 
     // Guard against empty text
     const safeText = text?.trim() || "...";
-    const formatted = toTelegramMarkdown(safeText);
+    const formatted = markdownToHtml(safeText);
 
     const chunks = splitMessage(formatted, 4096);
     for (const chunk of chunks) {
@@ -242,11 +257,11 @@ export class TelegramChannel implements Channel {
         await this.api("sendMessage", {
           chat_id: Number(chatId),
           text: chunk,
-          parse_mode: "MarkdownV2",
+          parse_mode: "HTML",
         });
       } catch {
-        // Fallback to plain text if MarkdownV2 parsing fails
-        console.warn("[telegram] MarkdownV2 parse failed, falling back to plain text");
+        // Fallback to plain text if HTML parsing fails
+        console.warn("[telegram] HTML parse failed, falling back to plain text");
         const plainChunks = splitMessage(safeText, 4096);
         for (const plain of plainChunks) {
           await this.api("sendMessage", {
@@ -259,6 +274,49 @@ export class TelegramChannel implements Channel {
     }
   }
 
+  async deleteMessage(recipient: string, messageId: string): Promise<void> {
+    const chatId = chatIdMap.get(recipient) ?? (/^\d+$/.test(recipient) ? recipient : null);
+    if (!chatId) return;
+    try {
+      await this.api("deleteMessage", {
+        chat_id: Number(chatId),
+        message_id: Number(messageId),
+      });
+    } catch {
+      // Silently ignore delete failures
+    }
+  }
+
+  async sendWithKeyboard(recipient: string, text: string, keyboard: InlineKeyboardMarkup): Promise<string | undefined> {
+    const chatId = chatIdMap.get(recipient) ?? (/^\d+$/.test(recipient) ? recipient : null);
+    if (!chatId) return undefined;
+    const result = await this.api<{ message_id: number }>("sendMessage", {
+      chat_id: Number(chatId),
+      text,
+      reply_markup: keyboard,
+    });
+    return String(result.message_id);
+  }
+
+  onCallbackQuery(handler: (query: CallbackQuery) => Promise<void>): void {
+    this.callbackQueryHandler = handler;
+  }
+
+  async editMessageRemoveKeyboard(recipient: string, messageId: string, text: string): Promise<void> {
+    const chatId = chatIdMap.get(recipient) ?? (/^\d+$/.test(recipient) ? recipient : null);
+    if (!chatId) return;
+    try {
+      await this.api("editMessageText", {
+        chat_id: Number(chatId),
+        message_id: Number(messageId),
+        text,
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch {
+      // Silently ignore edit failures
+    }
+  }
+
   async shutdown(): Promise<void> {
     this.running = false;
     console.log("[telegram] Bot stopped.");
@@ -268,16 +326,68 @@ export class TelegramChannel implements Channel {
 // In-memory map of username/id -> chatId
 const chatIdMap = new Map<string, string>();
 
+/** Escape HTML special chars */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /**
- * Convert standard markdown (LLM output) to Telegram MarkdownV2.
- * Uses telegramify-markdown for proper AST-based conversion and escaping.
+ * Convert standard markdown (LLM output) to Telegram HTML.
+ * HTML mode is far more reliable than MarkdownV2 with Telegram's API.
  */
-function toTelegramMarkdown(text: string): string {
+function markdownToHtml(text: string): string {
   try {
-    return telegramifyMarkdown(text, "escape");
+    const preserved: string[] = [];
+    const ph = (i: number) => `\x00PH${i}\x00`;
+
+    let s = text;
+
+    // 1. Extract fenced code blocks — preserve content as-is
+    s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      const tag = lang
+        ? `<pre><code class="language-${esc(lang)}">${esc(code.replace(/\n$/, ""))}</code></pre>`
+        : `<pre>${esc(code.replace(/\n$/, ""))}</pre>`;
+      preserved.push(tag);
+      return ph(preserved.length - 1);
+    });
+
+    // 2. Extract inline code
+    s = s.replace(/`([^`]+)`/g, (_, code) => {
+      preserved.push(`<code>${esc(code)}</code>`);
+      return ph(preserved.length - 1);
+    });
+
+    // 3. Now escape HTML in the remaining text
+    s = esc(s);
+
+    // 4. Convert markdown formatting to HTML
+    // Bold: **text** or __text__
+    s = s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    s = s.replace(/__(.+?)__/g, "<b>$1</b>");
+    // Italic: *text* or _text_ (but not inside bold)
+    s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
+    s = s.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, "<i>$1</i>");
+    // Strikethrough: ~~text~~
+    s = s.replace(/~~(.+?)~~/g, "<s>$1</s>");
+    // Links: [text](url) — already HTML-escaped, unescape the brackets
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    // Headings: # text → bold (Telegram has no heading tag)
+    s = s.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
+    // Blockquotes: lines starting with &gt; (already escaped)
+    s = s.replace(/^&gt;\s?(.*)$/gm, "<blockquote>$1</blockquote>");
+    // Merge adjacent blockquotes
+    s = s.replace(/<\/blockquote>\n<blockquote>/g, "\n");
+    // Unordered lists: - or * at start of line
+    s = s.replace(/^[\t ]*[-*] (.*)$/gm, "  • $1");
+    // Horizontal rules
+    s = s.replace(/^---+$/gm, "———");
+
+    // 5. Restore preserved code blocks
+    s = s.replace(/\x00PH(\d+)\x00/g, (_, idx) => preserved[Number(idx)]);
+
+    return s;
   } catch {
-    // If conversion fails, return original text (will be sent as plain text)
-    return text;
+    return esc(text);
   }
 }
 

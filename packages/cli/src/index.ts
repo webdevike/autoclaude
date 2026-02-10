@@ -9,15 +9,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
+  AutonomousRunner,
+  createIntegrations,
+  shutdownIntegrations,
 } from "@jarvis/core";
-import type { ModeConfig, Integration } from "@jarvis/core";
+import type { ModeConfig } from "@jarvis/core";
 import { Gateway } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
 import { VoiceWebChannel } from "@jarvis/channel-voice-web";
-
-import { NotionIntegration } from "@jarvis/integration-notion";
-import { LinearIntegration } from "@jarvis/integration-linear";
-import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
 
 async function main(): Promise<void> {
@@ -53,23 +52,17 @@ async function main(): Promise<void> {
   // --- Initialize core ---
   const orchestrator = new AgentOrchestrator(configDir);
 
-  // --- Initialize integrations ---
-  const integrations: Integration[] = [
-    new NotionIntegration(),
-    new LinearIntegration(),
-    new GmailIntegration(),
-  ];
+  // --- Initialize integrations (shared registry used by all channels) ---
+  const registry = await createIntegrations();
 
-  for (const integration of integrations) {
-    await integration.initialize({});
-    // Register integration tools with the orchestrator
+  for (const integration of registry.integrations) {
     for (const tool of integration.tools) {
       orchestrator.registerTool(tool);
     }
   }
 
   // Pass initialized integrations to orchestrator for MCP bridge (Claude Code SDK)
-  orchestrator.setIntegrations(integrations);
+  orchestrator.setIntegrations(registry.integrations);
 
   // --- Set up gateway ---
   const gateway = new Gateway(orchestrator, {
@@ -143,6 +136,23 @@ async function main(): Promise<void> {
   // --- Start gateway ---
   await gateway.start();
 
+  // --- Set up autonomous runner ---
+  const runner = new AutonomousRunner({
+    sendMessage: (channelName, recipient, text) => gateway.sendToChannel(channelName, recipient, text),
+    sendWithKeyboard: (channelName, recipient, text, keyboard) => gateway.sendWithKeyboard(channelName, recipient, text, keyboard),
+    editMessageRemoveKeyboard: (channelName, recipient, messageId, text) => gateway.editMessageRemoveKeyboard(channelName, recipient, messageId, text),
+  });
+  orchestrator.setAutonomousRunner(runner);
+
+  // Wire Telegram callback queries to the runner
+  const telegramChannel = gateway.getChannel("telegram");
+  if (telegramChannel?.onCallbackQuery) {
+    telegramChannel.onCallbackQuery(async (query) => {
+      await runner.handleCallbackQuery(query);
+    });
+    console.log("[auto] Telegram callback queries wired to autonomous runner.");
+  }
+
   console.log(`\nJarvis is running in "${defaultMode}" mode.`);
   console.log("Press Ctrl+C to stop.\n");
 
@@ -151,9 +161,7 @@ async function main(): Promise<void> {
     console.log("\nShutting down Jarvis...");
     scheduler.shutdown();
     await gateway.shutdown();
-    for (const integration of integrations) {
-      await integration.shutdown();
-    }
+    await shutdownIntegrations(registry);
     process.exit(0);
   };
 

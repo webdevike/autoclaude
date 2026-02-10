@@ -14,6 +14,7 @@ import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
+import type { AutonomousRunner } from "./autonomous-runner.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -299,6 +300,9 @@ export class AgentOrchestrator {
   // Cached skill docs from .pi/skills/*/SKILL.md (loaded once)
   private skillDocsCache: string | null = null;
 
+  // Autonomous task runner (set by CLI)
+  private autonomousRunner?: AutonomousRunner;
+
   // Callbacks for live cron job management (set by CLI after scheduler is created)
   private cronCallbacks?: {
     onAdded: (config: import("./types.js").CronJobConfig) => void;
@@ -321,6 +325,16 @@ export class AgentOrchestrator {
   /** Get cron callbacks (used by autonomy tools) */
   getCronCallbacks() {
     return this.cronCallbacks;
+  }
+
+  /** Set autonomous runner (called by CLI after gateway is ready) */
+  setAutonomousRunner(runner: AutonomousRunner): void {
+    this.autonomousRunner = runner;
+  }
+
+  /** Get autonomous runner */
+  getAutonomousRunner(): AutonomousRunner | undefined {
+    return this.autonomousRunner;
   }
 
   /** Set initialized integrations for MCP bridge (called by CLI) */

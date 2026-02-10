@@ -98,6 +98,9 @@ export interface Integration {
   shutdown: () => Promise<void>;
 }
 
+export interface InlineKeyboardButton { text: string; callback_data: string }
+export interface InlineKeyboardMarkup { inline_keyboard: InlineKeyboardButton[][] }
+
 export interface Channel {
   name: string;
   initialize: (
@@ -108,6 +111,9 @@ export interface Channel {
   sendTyping?: (recipient: string) => Promise<void>;
   sendPlaceholder?: (recipient: string, text: string) => Promise<string | undefined>;
   editMessage?: (recipient: string, messageId: string, text: string) => Promise<void>;
+  deleteMessage?: (recipient: string, messageId: string) => Promise<void>;
+  sendWithKeyboard?: (recipient: string, text: string, keyboard: InlineKeyboardMarkup) => Promise<string | undefined>;
+  onCallbackQuery?: (handler: (query: CallbackQuery) => Promise<void>) => void;
   shutdown: () => Promise<void>;
 }
 
@@ -132,4 +138,44 @@ export interface StreamProgressEvent {
   delta?: string;      // new text chunk (for text_delta)
   toolName?: string;   // tool being used (for tool_use)
   finalText?: string;  // complete response (for done)
+}
+
+// Callback query from inline keyboards (Telegram)
+export interface CallbackQuery {
+  id: string;
+  from: { id: number; username?: string };
+  data?: string;
+  message?: { message_id: number; chat: { id: number } };
+}
+
+// Autonomous task types
+export type TaskStatus = "planning" | "awaiting_approval" | "running" | "paused" | "completed" | "cancelled" | "failed";
+
+export interface TaskPhase {
+  id: number;
+  title: string;
+  description: string;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+}
+
+export interface AutonomousTask {
+  id: string;
+  description: string;
+  sender: string;
+  chatId: string;
+  channelName: string;
+  mode: string;
+  cwd: string;
+  status: TaskStatus;
+  phases: TaskPhase[];
+  currentPhase: number;
+  pendingQuestion?: { id: string; question: string; askedAt: number };
+  planText?: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  error?: string;
 }

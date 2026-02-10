@@ -18,8 +18,7 @@
   },
   "dependencies": {
     "@jarvis/core": "workspace:*",
-    "@jarvis/gateway": "workspace:*",
-    "telegramify-markdown": "^1.3.2"
+    "@jarvis/gateway": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

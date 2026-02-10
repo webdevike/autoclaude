@@ -1,0 +1,14 @@
+[Unit]
+Description=Jarvis LiveKit Voice Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ike/jarvis-agent
+ExecStart=/usr/bin/node packages/livekit-agent/dist/agent.js start
+EnvironmentFile=/home/ike/jarvis-agent/.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

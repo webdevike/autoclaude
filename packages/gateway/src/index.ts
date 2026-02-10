@@ -1,6 +1,7 @@
 import type {
   AgentOrchestrator,
   Channel,
+  InlineKeyboardMarkup,
   Message,
   ModeConfig,
   StreamProgressEvent,
@@ -37,6 +38,26 @@ export class Gateway {
   /** Register a channel adapter */
   registerChannel(channel: Channel): void {
     this.channels.set(channel.name, channel);
+  }
+
+  /** Get a channel by name */
+  getChannel(name: string): Channel | undefined {
+    return this.channels.get(name);
+  }
+
+  /** Send a message with inline keyboard via a channel */
+  async sendWithKeyboard(channelName: string, recipient: string, text: string, keyboard: InlineKeyboardMarkup): Promise<string | undefined> {
+    const channel = this.channels.get(channelName);
+    if (!channel?.sendWithKeyboard) return undefined;
+    return channel.sendWithKeyboard(recipient, text, keyboard);
+  }
+
+  /** Edit a message to remove its inline keyboard */
+  async editMessageRemoveKeyboard(channelName: string, recipient: string, messageId: string, text: string): Promise<void> {
+    const channel = this.channels.get(channelName) as Channel & { editMessageRemoveKeyboard?: (r: string, m: string, t: string) => Promise<void> };
+    if (channel?.editMessageRemoveKeyboard) {
+      await channel.editMessageRemoveKeyboard(recipient, messageId, text);
+    }
   }
 
   /** Initialize all registered channels and start listening */
@@ -79,6 +100,24 @@ export class Gateway {
     console.log(
       `[gateway] ${channel.name}/${message.sender}: ${message.text.slice(0, 100)}`,
     );
+
+    // --- Autonomous runner interception ---
+    const runner = this.orchestrator.getAutonomousRunner?.();
+
+    // Check if runner has a pending question for this sender
+    if (runner?.hasPendingQuestion(message.sender)) {
+      const handled = runner.handleUserReply(message.sender, message.text);
+      if (handled) {
+        console.log(`[gateway] Routed reply to autonomous runner for ${message.sender}`);
+        return;
+      }
+    }
+
+    // Handle /auto commands
+    if (message.text.startsWith("/auto")) {
+      await this.handleAutoCommand(message, channel, defaultMode);
+      return;
+    }
 
     let placeholderId: string | undefined;
     try {
@@ -180,16 +219,15 @@ export class Gateway {
         editTimer = null;
       }
 
-      // Final message edit with complete response
+      // Final message: delete the streaming placeholder and send a properly formatted message
       const finalText =
         response.text?.trim() ||
         "I processed your request but have no response to show.";
 
-      if (placeholderId && channel.editMessage) {
-        await channel.editMessage(message.sender, placeholderId, finalText);
-      } else {
-        await channel.send(message.sender, finalText);
+      if (placeholderId && channel.deleteMessage) {
+        await channel.deleteMessage(message.sender, placeholderId).catch(() => {});
       }
+      await channel.send(message.sender, finalText);
     } catch (err) {
       // Clear any pending edit timer on error
       if (editTimer) {
@@ -200,6 +238,61 @@ export class Gateway {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       console.error(`[gateway] Error processing message: ${errorMsg}`);
       await channel.send(message.sender, `Something went wrong: ${errorMsg}`);
+    }
+  }
+
+  /** Handle /auto commands */
+  private async handleAutoCommand(msg: Message, channel: Channel, defaultMode: string): Promise<void> {
+    const runner = this.orchestrator.getAutonomousRunner?.();
+    if (!runner) {
+      await channel.send(msg.sender, "Autonomous runner not available.");
+      return;
+    }
+
+    const args = msg.text.slice(5).trim(); // strip "/auto"
+
+    if (!args || args === "help") {
+      await channel.send(msg.sender, "Usage:\n/auto <task description> — start a task\n/auto status — check running task\n/auto cancel — cancel running task");
+      return;
+    }
+
+    if (args === "status") {
+      await channel.send(msg.sender, runner.getStatus());
+      return;
+    }
+
+    if (args === "cancel") {
+      await channel.send(msg.sender, runner.cancel());
+      return;
+    }
+
+    // Parse optional --cwd flag
+    let cwd: string | undefined;
+    let description = args;
+    const cwdMatch = args.match(/^--cwd\s+(\S+)\s+([\s\S]+)$/);
+    if (cwdMatch) {
+      cwd = cwdMatch[1];
+      description = cwdMatch[2];
+    }
+
+    // Get mode config for cwd fallback
+    const modeConfig = this.config.modes.find(m => m.mode === (msg.mode || defaultMode)) ?? this.config.modes[0];
+    const taskCwd = cwd ?? modeConfig?.cwd ?? process.cwd();
+    const chatId = (msg.metadata?.chatId as string) ?? msg.channelMessageId ?? msg.sender;
+
+    const result = runner.startTask({
+      description,
+      sender: msg.sender,
+      chatId,
+      channelName: channel.name,
+      mode: msg.mode || defaultMode,
+      cwd: taskCwd,
+    });
+
+    if ("error" in result) {
+      await channel.send(msg.sender, result.error);
+    } else {
+      await channel.send(msg.sender, `Task ${result.taskId} started. Planning...`);
     }
   }
 

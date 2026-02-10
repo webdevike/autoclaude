@@ -1,4 +1,6 @@
 export { AgentOrchestrator } from "./agent.js";
+export { AutonomousRunner } from "./autonomous-runner.js";
+export type { AutonomousRunnerDeps } from "./autonomous-runner.js";
 export { createModel, completeLLM, streamLLM, parseModel } from "./llm.js";
 export {
   createPiSession,
@@ -15,13 +17,18 @@ export { runClaudeCode } from "./claude-code-delegate.js";
 export { PreferencesManager, UserPreferencesSchema } from "./preferences.js";
 export type { UserPreferences } from "./preferences.js";
 export { ConfigManager } from "./config-manager.js";
+export { createIntegrations, shutdownIntegrations } from "./integrations.js";
+export type { IntegrationRegistry } from "./integrations.js";
 export { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
 export type {
   AgentResponse,
   AgentSession,
+  AutonomousTask,
+  CallbackQuery,
   Channel,
   CronJobConfig,
   DelegationRequest,
+  InlineKeyboardMarkup,
   Integration,
   Message,
   ModeConfig,
@@ -30,5 +37,7 @@ export type {
   ScheduleType,
   StatusUpdate,
   StreamProgressEvent,
+  TaskPhase,
+  TaskStatus,
   ToolDefinition,
 } from "./types.js";

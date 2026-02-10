@@ -8,7 +8,8 @@
     "dev": "pnpm --filter @jarvis/cli dev",
     "start": "pnpm --filter @jarvis/cli start",
     "type-check": "pnpm -r type-check",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "dev:voice": "pnpm --filter @jarvis/livekit-agent dev"
   },
   "engines": {
     "node": ">=22"

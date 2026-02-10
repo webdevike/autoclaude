@@ -16,6 +16,7 @@ export interface ClaudeCodeConfig {
   allowedTools?: string[];
   tools?: string[]; // limit available built-in tools (skips MCP loading)
   permissionMode?: "default" | "bypassPermissions" | "acceptEdits";
+  allowDangerouslySkipPermissions?: boolean;
   cwd?: string;
   maxTurns?: number;
   mcpServers?: Record<string, McpServerConfig>;
@@ -59,7 +60,7 @@ export async function runClaudeCode(
     allowedTools,
     tools,
     permissionMode,
-    allowDangerouslySkipPermissions: false,
+    allowDangerouslySkipPermissions: config.allowDangerouslySkipPermissions ?? false,
     resume: sessionId,
     mcpServers,
     systemPrompt: systemPrompt
