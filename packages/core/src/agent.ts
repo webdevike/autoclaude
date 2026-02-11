@@ -31,14 +31,12 @@ import type {
 import gmailExtension from "@jarvis/extensions/gmail/index.js";
 import exaExtension from "@jarvis/extensions/exa/index.js";
 import linearExtension from "@jarvis/extensions/linear/index.js";
-import notionExtension from "@jarvis/extensions/notion/index.js";
 
 // Define extensions array
 const EXTENSIONS = [
   gmailExtension,
   exaExtension,
   linearExtension,
-  notionExtension,
 ];
 
 // Cost per 1M tokens (input/output) in USD
@@ -714,16 +712,50 @@ export class AgentOrchestrator {
           !!preferencesManager,
         )
       : [];
-    const allowedTools = [...baseAllowed, ...mcpToolNames];
+
+    // Build MCP servers map
+    const mcpServersMap: Record<string, any> = {};
+    if (mcpServer) {
+      mcpServersMap[MCP_SERVER_NAME] = mcpServer;
+    }
+
+    // Add Notion MCP server (official open-source, stdio transport)
+    const notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
+    const notionMcpToolNames: string[] = [];
+    if (notionToken && modeConfig.integrations.includes("notion")) {
+      mcpServersMap["notion"] = {
+        type: "stdio" as const,
+        command: "npx",
+        args: ["-y", "@notionhq/notion-mcp-server"],
+        env: { NOTION_TOKEN: notionToken },
+      };
+      // Known tool names from the Notion MCP server
+      const notionTools = [
+        "notion-search", "notion-fetch", "notion-create-pages",
+        "notion-update-page", "notion-move-pages", "notion-duplicate-page",
+        "notion-create-database", "notion-update-data-source",
+        "notion-query-data-sources", "notion-query-database-view",
+        "notion-create-comment", "notion-get-comments",
+        "notion-get-teams", "notion-get-users", "notion-get-user",
+        "notion-get-self",
+      ];
+      for (const t of notionTools) {
+        notionMcpToolNames.push(`mcp__notion__${t}`);
+      }
+      console.log(`[orchestrator] Notion MCP server configured with ${notionTools.length} tools`);
+    }
+
+    const allMcpToolNames = [...mcpToolNames, ...notionMcpToolNames];
+    const allowedTools = [...baseAllowed, ...allMcpToolNames];
 
     // If tools whitelist is set, merge MCP tool names so they're visible
     const configTools = modeConfig.claudeCode?.tools;
-    const tools = configTools && mcpToolNames.length > 0
-      ? [...configTools, ...mcpToolNames]
+    const tools = configTools && allMcpToolNames.length > 0
+      ? [...configTools, ...allMcpToolNames]
       : configTools;
 
-    const mcpServers = mcpServer
-      ? { [MCP_SERVER_NAME]: mcpServer }
+    const mcpServers = Object.keys(mcpServersMap).length > 0
+      ? mcpServersMap
       : undefined;
 
     try {

@@ -17,7 +17,6 @@ import type { ModeConfig } from "@jarvis/core";
 import { Gateway } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
 import { VoiceWebChannel } from "@jarvis/channel-voice-web";
-import { NotionIntegration } from "@jarvis/integration-notion";
 import { LinearIntegration } from "@jarvis/integration-linear";
 import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
@@ -57,7 +56,6 @@ async function main(): Promise<void> {
 
   // --- Initialize integrations (shared registry used by all channels) ---
   const registry = await createIntegrations([
-    NotionIntegration,
     LinearIntegration,
     GmailIntegration,
   ]);

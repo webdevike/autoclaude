@@ -33,6 +33,14 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodType {
       const base = z.boolean().optional();
       return desc ? base.describe(desc) : base;
     }
+    case "object": {
+      const base = z.record(z.string(), z.unknown()).optional();
+      return desc ? base.describe(desc) : base;
+    }
+    case "array": {
+      const base = z.array(z.unknown()).optional();
+      return desc ? base.describe(desc) : base;
+    }
     case "string":
     default: {
       const base = z.string().optional();
@@ -71,6 +79,16 @@ function jsonSchemaToZodShape(
           shape[key] = desc ? r.describe(desc) : r;
           break;
         }
+        case "object": {
+          const r = z.record(z.string(), z.unknown());
+          shape[key] = desc ? r.describe(desc) : r;
+          break;
+        }
+        case "array": {
+          const r = z.array(z.unknown());
+          shape[key] = desc ? r.describe(desc) : r;
+          break;
+        }
         case "string":
         default: {
           const r = z.string();
@@ -90,10 +108,29 @@ function jsonSchemaToZodShape(
  */
 function wrapIntegrationTool(td: ToolDefinition) {
   const zodShape = jsonSchemaToZodShape(td.parameters);
+  const objectKeys = new Set<string>();
+  const arrayKeys = new Set<string>();
+  const props = (td.parameters.properties ?? {}) as Record<string, Record<string, unknown>>;
+  for (const [key, prop] of Object.entries(props)) {
+    if (prop.type === "object") objectKeys.add(key);
+    if (prop.type === "array") arrayKeys.add(key);
+  }
 
   return tool(td.name, td.description, zodShape, async (args) => {
     try {
-      const result = await td.execute(args as Record<string, unknown>);
+      // Safety net: if object/array params arrived as JSON strings, parse them
+      const resolvedArgs = { ...(args as Record<string, unknown>) };
+      for (const key of [...objectKeys, ...arrayKeys]) {
+        const val = resolvedArgs[key];
+        if (typeof val === "string") {
+          try {
+            resolvedArgs[key] = JSON.parse(val);
+          } catch {
+            // keep as-is
+          }
+        }
+      }
+      const result = await td.execute(resolvedArgs);
       return { content: [{ type: "text" as const, text: result }] };
     } catch (err) {
       return {
