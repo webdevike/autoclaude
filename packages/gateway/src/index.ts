@@ -190,9 +190,10 @@ export class Gateway {
             } else if (event.type === "tool_use" && event.toolName) {
               // Tool usage exits status phase
               inStatusPhase = false;
+              const friendly = formatToolName(event.toolName);
               const statusText = accumulated
-                ? `${accumulated}\n\n_Using tool: ${event.toolName}..._`
-                : `Using tool: ${event.toolName}...`;
+                ? `${accumulated}\n\n_${friendly}_`
+                : friendly;
               doEdit(statusText);
             } else if (event.type === "status" && event.text) {
               // Status updates keep us in status phase - just show the status text
@@ -328,4 +329,106 @@ export class Gateway {
     await Promise.all(shutdownPromises);
     console.log("[gateway] Shutdown complete.");
   }
+}
+
+/**
+ * Convert raw MCP/SDK tool names into clean, user-friendly labels.
+ *
+ * Examples:
+ *   mcp__notion__notion-search       → "Searching Notion..."
+ *   mcp__jarvis-tools__exa_search    → "Searching the web..."
+ *   mcp__jarvis-tools__gmail_send    → "Sending email..."
+ *   Read                             → "Reading file..."
+ *   Bash                             → "Running command..."
+ */
+function formatToolName(raw: string): string {
+  // --- Notion MCP tools ---
+  if (raw.startsWith("mcp__notion__")) {
+    const tool = raw.replace("mcp__notion__", "").replace("notion-", "");
+    const notionMap: Record<string, string> = {
+      "search": "Searching Notion...",
+      "fetch": "Reading Notion page...",
+      "create-pages": "Creating Notion page...",
+      "update-page": "Updating Notion page...",
+      "move-pages": "Moving Notion pages...",
+      "duplicate-page": "Duplicating Notion page...",
+      "create-database": "Creating Notion database...",
+      "update-data-source": "Updating Notion data source...",
+      "query-data-sources": "Querying Notion data...",
+      "query-database-view": "Querying Notion database...",
+      "create-comment": "Adding Notion comment...",
+      "get-comments": "Reading Notion comments...",
+      "get-teams": "Fetching Notion teams...",
+      "get-users": "Fetching Notion users...",
+      "get-user": "Fetching Notion user...",
+      "get-self": "Checking Notion identity...",
+    };
+    return notionMap[tool] ?? `Using Notion...`;
+  }
+
+  // --- Jarvis MCP tools ---
+  if (raw.startsWith("mcp__jarvis-tools__")) {
+    const tool = raw.replace("mcp__jarvis-tools__", "");
+
+    if (tool === "exa_search") return "Searching the web...";
+    if (tool.startsWith("gmail_")) {
+      const action = tool.replace("gmail_", "");
+      const gmailMap: Record<string, string> = {
+        "send": "Sending email...",
+        "read": "Reading email...",
+        "search": "Searching email...",
+        "list": "Listing emails...",
+        "draft": "Drafting email...",
+      };
+      return gmailMap[action] ?? "Using Gmail...";
+    }
+    if (tool.startsWith("linear_")) {
+      const action = tool.replace("linear_", "");
+      const linearMap: Record<string, string> = {
+        "create_issue": "Creating Linear issue...",
+        "update_issue": "Updating Linear issue...",
+        "list_issues": "Listing Linear issues...",
+        "search": "Searching Linear...",
+      };
+      return linearMap[action] ?? "Using Linear...";
+    }
+    if (tool === "add_cron_job") return "Setting up scheduled task...";
+    if (tool === "remove_cron_job") return "Removing scheduled task...";
+    if (tool === "list_cron_jobs") return "Listing scheduled tasks...";
+    if (tool === "update_mode_config") return "Updating configuration...";
+    if (tool === "get_preference") return "Reading preferences...";
+    if (tool === "set_preference") return "Saving preferences...";
+
+    // Generic jarvis tool fallback: clean up underscores
+    return `Using ${tool.replace(/_/g, " ")}...`;
+  }
+
+  // --- Built-in Claude Code tools ---
+  const builtinMap: Record<string, string> = {
+    "Read": "Reading file...",
+    "Write": "Writing file...",
+    "Edit": "Editing file...",
+    "MultiEdit": "Editing files...",
+    "Bash": "Running command...",
+    "Glob": "Searching files...",
+    "Grep": "Searching code...",
+    "WebSearch": "Searching the web...",
+    "WebFetch": "Fetching webpage...",
+    "Task": "Running sub-task...",
+    "TodoRead": "Checking tasks...",
+    "TodoWrite": "Updating tasks...",
+    "NotebookEdit": "Editing notebook...",
+  };
+  if (builtinMap[raw]) return builtinMap[raw];
+
+  // --- Generic MCP fallback (mcp__<server>__<tool>) ---
+  const mcpMatch = raw.match(/^mcp__([^_]+)__(.+)$/);
+  if (mcpMatch) {
+    const server = mcpMatch[1].replace(/-/g, " ");
+    const tool = mcpMatch[2].replace(/[_-]/g, " ");
+    return `Using ${server}: ${tool}...`;
+  }
+
+  // Final fallback: clean up and return
+  return `Using ${raw.replace(/[_-]/g, " ")}...`;
 }
