@@ -103,6 +103,21 @@ export class TelegramChannel implements Channel {
       console.log(`[telegram] Dropped pending updates, offset=${this.offset}`);
     }
 
+    // Register bot commands so they appear in Telegram's autocomplete menu
+    await this.api("setMyCommands", {
+      commands: [
+        { command: "haiku", description: "Switch to Haiku (fast, default)" },
+        { command: "sonnet", description: "Switch to Sonnet (balanced)" },
+        { command: "opus", description: "Switch to Opus (smartest)" },
+        { command: "model", description: "Show current model" },
+        { command: "new", description: "Start a fresh conversation" },
+        { command: "usage", description: "Show token usage today" },
+        { command: "mode", description: "Show or switch modes" },
+      ],
+    }).catch((err: unknown) => {
+      console.warn("[telegram] Failed to set bot commands:", err instanceof Error ? err.message : err);
+    });
+
     // Start polling
     this.running = true;
     this.poll(onMessage);
