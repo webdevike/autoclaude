@@ -930,6 +930,16 @@ export class AgentOrchestrator {
       return { text: `Usage this month:\n${lines.join("\n")}` };
     }
 
+    if (trimmed === "/new" || trimmed === "/newsession" || trimmed === "/reset") {
+      const had = this.claudeCodeSessions.has(userId);
+      this.claudeCodeSessions.delete(userId);
+      return {
+        text: had
+          ? "Session cleared. Next message starts a fresh conversation."
+          : "No active session. Next message will start fresh.",
+      };
+    }
+
     return null;
   }
 
