@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { resolve, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import {
   createPiSession,
@@ -292,8 +293,15 @@ export class AgentOrchestrator {
   // Claude Code session IDs per user (for conversation continuity)
   private claudeCodeSessions: Map<string, string> = new Map();
 
+  // Per-user model overrides (set via /opus, /haiku, /sonnet commands)
+  private userModelOverrides: Map<string, string> = new Map();
+
   // Integrations for MCP bridge (set by CLI)
   private integrations: Integration[] = [];
+
+  // Cached MCP server instances (reused across messages)
+  private cachedMcpServer: ReturnType<typeof createJarvisMcpServer> | null = null;
+  private cachedMcpServersMap: Record<string, any> | null = null;
 
   // Cached skill docs from .pi/skills/*/SKILL.md (loaded once)
   private skillDocsCache: string | null = null;
@@ -338,6 +346,9 @@ export class AgentOrchestrator {
   /** Set initialized integrations for MCP bridge (called by CLI) */
   setIntegrations(integrations: Integration[]): void {
     this.integrations = integrations;
+    // Invalidate cached MCP servers so they're rebuilt with new integrations
+    this.cachedMcpServer = null;
+    this.cachedMcpServersMap = null;
     console.log(`[orchestrator] Registered ${integrations.length} integrations for MCP bridge`);
   }
 
@@ -688,20 +699,50 @@ export class AgentOrchestrator {
     const cwd = modeConfig.cwd || process.cwd();
     const existingSessionId = this.claudeCodeSessions.get(msg.sender);
 
+    // Resolve model: per-user override > config default > SDK default
+    const model = this.userModelOverrides.get(msg.sender) ?? modeConfig.claudeCode?.model;
+
     // Build system prompt with skill docs so Claude knows about integrations
     const systemPrompt = modeConfig.systemPrompt + this.getSkillDocs();
 
-    // Build MCP server with integration + autonomy tools
+    // Build or reuse cached MCP servers
     const preferencesManager = this.getPreferencesManager(msg.sender);
-    const mcpServer = this.integrations.length > 0 || this.cronCallbacks
-      ? createJarvisMcpServer({
+
+    if (!this.cachedMcpServersMap) {
+      const mcpServersMap: Record<string, any> = {};
+
+      if (this.integrations.length > 0 || this.cronCallbacks) {
+        this.cachedMcpServer = createJarvisMcpServer({
           integrations: this.integrations,
           configManager: this.configManager,
           preferencesManager,
           cronCallbacks: this.cronCallbacks,
           currentMode: modeConfig.mode,
-        })
-      : undefined;
+        });
+        mcpServersMap[MCP_SERVER_NAME] = this.cachedMcpServer;
+      }
+
+      // Add Notion MCP server (official open-source, stdio transport)
+      const notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
+      if (notionToken && modeConfig.integrations.includes("notion")) {
+        // Use locally-installed package instead of npx to avoid resolution overhead
+        const require = createRequire(import.meta.url);
+        const notionPkgPath = require.resolve("@notionhq/notion-mcp-server/package.json");
+        const notionBin = join(dirname(notionPkgPath), "bin", "cli.mjs");
+        mcpServersMap["notion"] = {
+          type: "stdio" as const,
+          command: "node",
+          args: [notionBin],
+          env: { NOTION_TOKEN: notionToken },
+        };
+        console.log(`[orchestrator] Notion MCP server configured (local install)`);
+      }
+
+      this.cachedMcpServersMap = mcpServersMap;
+      console.log(`[orchestrator] MCP servers map built and cached (${Object.keys(mcpServersMap).length} servers)`);
+    }
+
+    const mcpServer = this.cachedMcpServer;
 
     // Auto-allow all MCP tool names
     const baseAllowed = modeConfig.claudeCode?.allowedTools ?? [];
@@ -713,23 +754,9 @@ export class AgentOrchestrator {
         )
       : [];
 
-    // Build MCP servers map
-    const mcpServersMap: Record<string, any> = {};
-    if (mcpServer) {
-      mcpServersMap[MCP_SERVER_NAME] = mcpServer;
-    }
-
-    // Add Notion MCP server (official open-source, stdio transport)
-    const notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
+    // Notion MCP tool names (static list, always included if notion is in the map)
     const notionMcpToolNames: string[] = [];
-    if (notionToken && modeConfig.integrations.includes("notion")) {
-      mcpServersMap["notion"] = {
-        type: "stdio" as const,
-        command: "npx",
-        args: ["-y", "@notionhq/notion-mcp-server"],
-        env: { NOTION_TOKEN: notionToken },
-      };
-      // Known tool names from the Notion MCP server
+    if (this.cachedMcpServersMap["notion"]) {
       const notionTools = [
         "notion-search", "notion-fetch", "notion-create-pages",
         "notion-update-page", "notion-move-pages", "notion-duplicate-page",
@@ -742,7 +769,6 @@ export class AgentOrchestrator {
       for (const t of notionTools) {
         notionMcpToolNames.push(`mcp__notion__${t}`);
       }
-      console.log(`[orchestrator] Notion MCP server configured with ${notionTools.length} tools`);
     }
 
     const allMcpToolNames = [...mcpToolNames, ...notionMcpToolNames];
@@ -754,8 +780,8 @@ export class AgentOrchestrator {
       ? [...configTools, ...allMcpToolNames]
       : configTools;
 
-    const mcpServers = Object.keys(mcpServersMap).length > 0
-      ? mcpServersMap
+    const mcpServers = Object.keys(this.cachedMcpServersMap).length > 0
+      ? this.cachedMcpServersMap
       : undefined;
 
     try {
@@ -763,6 +789,7 @@ export class AgentOrchestrator {
         prompt: msg.text,
         systemPrompt,
         sessionId: existingSessionId,
+        model,
         allowedTools,
         tools,
         permissionMode: "bypassPermissions", // headless agent, no terminal to approve
@@ -807,6 +834,7 @@ export class AgentOrchestrator {
           const result = await runClaudeCode({
             prompt: msg.text,
             systemPrompt,
+            model,
             allowedTools,
             tools,
             permissionMode: "bypassPermissions", // headless agent, no terminal to approve
@@ -864,34 +892,27 @@ export class AgentOrchestrator {
       return { text: result.message };
     }
 
-    if (trimmed === "/sessions") {
-      const sessions = this.getSessions();
-      if (sessions.length === 0) {
-        return { text: "No active agent sessions." };
-      }
-      const lines = sessions.map(
-        (s) =>
-          `[${s.id}] ${s.tier} | ${s.mode} | ${s.status} | ${s.lastUpdate ?? "no update"}`,
-      );
-      return { text: lines.join("\n") };
+    // Model switching commands
+    const MODEL_ALIASES: Record<string, string> = {
+      "/haiku": "claude-haiku-4-5-20251001",
+      "/sonnet": "claude-sonnet-4-5-20250929",
+      "/opus": "claude-opus-4-20250514",
+    };
+
+    if (trimmed in MODEL_ALIASES) {
+      const modelId = MODEL_ALIASES[trimmed];
+      const shortName = trimmed.slice(1); // "haiku", "sonnet", "opus"
+      this.userModelOverrides.set(userId, modelId);
+      // Clear session so new model takes effect
+      this.claudeCodeSessions.delete(userId);
+      return { text: `Switched to ${shortName}. Next message will use ${modelId}.` };
     }
 
-    if (trimmed.startsWith("/peek ")) {
-      const sessionId = trimmed.slice(6).trim();
-      const session = this.sessions.get(sessionId);
-      if (!session) {
-        return { text: `Session ${sessionId} not found.` };
-      }
-      return { text: `[${session.id}] ${session.tier} | ${session.mode} | ${session.status}\nLast update: ${session.lastUpdate ?? "no update"}` };
-    }
-
-    if (trimmed === "/peek") {
-      const sessions = this.getSessions();
-      if (sessions.length === 0) {
-        return { text: "No active sessions." };
-      }
-      const lines = sessions.map(s => `${s.id}: ${s.status}`);
-      return { text: `Active sessions:\n${lines.join("\n")}` };
+    if (trimmed === "/model") {
+      const current = this.userModelOverrides.get(userId)
+        ?? this.modes.get(this.activeMode)?.claudeCode?.model
+        ?? "default (Sonnet)";
+      return { text: `Current model: ${current}\n\nSwitch with /haiku, /sonnet, or /opus` };
     }
 
     if (trimmed === "/usage today" || trimmed === "/usage") {

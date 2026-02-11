@@ -13,6 +13,7 @@ export interface ClaudeCodeConfig {
   prompt: string;
   systemPrompt?: string;
   sessionId?: string; // resume a previous conversation
+  model?: string; // Claude model ID (e.g. "claude-haiku-4-5-20251001")
   allowedTools?: string[];
   tools?: string[]; // limit available built-in tools (skips MCP loading)
   permissionMode?: "default" | "bypassPermissions" | "acceptEdits";
@@ -56,6 +57,7 @@ export async function runClaudeCode(
     includePartialMessages: true,
     settingSources: [] as const, // skip filesystem config for speed, no MCP
     cwd: cwd || process.cwd(),
+    model: config.model,
     maxTurns,
     allowedTools,
     tools,

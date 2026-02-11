@@ -399,6 +399,7 @@ export interface CreateJarvisMcpServerOptions {
   preferencesManager?: PreferencesManager;
   cronCallbacks?: CronCallbacks;
   currentMode: string;
+  verbose?: boolean;
 }
 
 /**
@@ -410,11 +411,13 @@ export interface CreateJarvisMcpServerOptions {
 export function createJarvisMcpServer(opts: CreateJarvisMcpServerOptions) {
   const mcpTools: any[] = [];
 
+  const verbose = opts.verbose ?? false;
+
   // 1. Wrap all integration tools
   for (const integration of opts.integrations) {
     for (const td of integration.tools) {
       mcpTools.push(wrapIntegrationTool(td));
-      console.log(`[jarvis-tools] Registered integration tool: ${td.name}`);
+      if (verbose) console.log(`[jarvis-tools] Registered integration tool: ${td.name}`);
     }
   }
 
@@ -427,13 +430,13 @@ export function createJarvisMcpServer(opts: CreateJarvisMcpServerOptions) {
   );
   for (const t of autonomyTools) {
     mcpTools.push(t);
-    console.log(`[jarvis-tools] Registered autonomy tool: ${t.name}`);
+    if (verbose) console.log(`[jarvis-tools] Registered autonomy tool: ${t.name}`);
   }
 
   // 3. Add Exa search
   if (process.env.EXA_API_KEY) {
     mcpTools.push(buildExaMcpTool());
-    console.log("[jarvis-tools] Registered exa_search tool");
+    if (verbose) console.log("[jarvis-tools] Registered exa_search tool");
   }
 
   console.log(`[jarvis-tools] MCP server created with ${mcpTools.length} tools`);
