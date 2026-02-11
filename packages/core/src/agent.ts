@@ -766,6 +766,7 @@ export class AgentOrchestrator {
         allowedTools,
         tools,
         permissionMode: modeConfig.claudeCode?.permissionMode,
+        allowDangerouslySkipPermissions: true, // headless agent, no terminal to approve
         maxTurns: modeConfig.claudeCode?.maxTurns,
         cwd,
         mcpServers,
@@ -810,6 +811,7 @@ export class AgentOrchestrator {
             allowedTools,
             tools,
             permissionMode: modeConfig.claudeCode?.permissionMode,
+            allowDangerouslySkipPermissions: true, // headless agent, no terminal to approve
             maxTurns: modeConfig.claudeCode?.maxTurns,
             cwd,
             mcpServers,
