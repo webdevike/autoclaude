@@ -1,258 +1,287 @@
-# Feature Landscape: Self-Hosted Personal AI Assistants
+# Feature Research
 
-**Domain:** Single-user self-hosted personal AI assistant accessed via Telegram
-**Researched:** 2026-02-05
-**Confidence:** HIGH (based on analysis of OpenClaw, multiple commercial assistants, and 2026 ecosystem trends)
+**Domain:** Personal AI Assistant with Persistent Memory & Identity
+**Researched:** 2026-02-12
+**Confidence:** HIGH
 
-## Executive Summary
+## Feature Landscape
 
-The personal AI assistant market in 2026 has matured rapidly, with self-hosted solutions like [OpenClaw gaining 117K+ GitHub stars](https://medium.com/@ilanpoonjolai/moltbot-formerly-clawdbot-101-the-viral-self-hosted-ai-assistant-that-lives-in-your-chats-47000580e320) and the [global market hitting $42 billion](https://www.marketsandmarkets.com/Market-Reports/ai-assistant-market-40111511.html). The ecosystem has converged on clear table stakes: [multi-platform integration, persistent memory, and natural conversation](https://reclaim.ai/blog/ai-assistant-apps). The most significant differentiator for self-hosted solutions is **deep system access with privacy guarantees** — the ability to [access filesystem, browser, email, and smart home while keeping data local](https://medium.com/@gemQueenx/clawdbot-ai-the-revolutionary-open-source-personal-assistant-transforming-productivity-in-2026-6ec5fdb3084f).
+### Table Stakes (Users Expect These)
 
-Single-user self-hosted assistants occupy a unique position: they can assume total control without multi-tenancy constraints, enabling aggressive self-configuration and system-level automation that cloud services cannot provide.
+Features users assume exist in a personal AI assistant with memory. Missing these = product feels incomplete.
 
----
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| **File-based persistent memory** | Industry standard (OpenClaw, Mem0, Clawdbot). Users expect "write it to memory" to create durable records. | MEDIUM | Markdown files as source of truth: `MEMORY.md` for curated facts, `memory/YYYY-MM-DD.md` for daily logs. Builds on existing JSONL session logs. |
+| **Semantic memory search** | Users expect AI to "remember when I said X" across sessions. Keyword search alone fails on paraphrases. | MEDIUM | Hybrid vector + BM25 search. Vector handles "Mac Studio gateway host" → "machine running gateway", BM25 handles exact tokens (error codes, IDs). OpenClaw default: 70% vector, 30% BM25. |
+| **Soul/identity file** | Users expect consistent personality across sessions. "Who are you?" should have a stable answer. | LOW | `SOUL.md` loaded at session start. Contains core truths, boundaries, vibe, continuity notes. Agent reads on wakeup, can update as it learns. |
+| **Pre-compaction memory flush** | Context window overflow = data loss unless memories saved proactively. Expected to "just work". | MEDIUM | Silent turn before compaction: agent reviews conversation, extracts key facts, writes to disk. Triggers at ~75% of context limit (configurable soft threshold). |
+| **Memory search tool** | If memories exist, agent must be able to retrieve them. Otherwise memory is write-only (useless). | MEDIUM | `memory_search(query)` returns snippets with file paths, line ranges, relevance scores. Capped at ~700 chars per result to avoid context bloat. |
+| **Daily memory logs** | Users expect "what did we discuss yesterday?" to work. Curated memory alone is lossy. | LOW | One `memory/YYYY-MM-DD.md` file per day. Auto-loads today + yesterday at session start. Agent appends running notes. |
+| **Workspace structure** | Users migrating from OpenClaw expect `~/.jarvis/workspace/` layout. Files in predictable locations. | LOW | Separation: `~/.jarvis/` for config/credentials/sessions, `~/.jarvis/workspace/` for memory/identity/agent files. Follow OpenClaw conventions. |
 
-## Table Stakes
+### Differentiators (Competitive Advantage)
 
-Features users expect from any personal AI assistant in 2026. Missing these makes the product feel incomplete or dated.
+Features that set jarvis apart. Not required, but valuable for specific use cases.
 
-| Feature | Why Expected | Complexity | Implementation Notes |
-|---------|--------------|------------|---------------------|
-| **Natural Conversation** | [99.5% speech recognition accuracy is now baseline](https://www.imd.org/ibyimd/artificial-intelligence/2026-ai-trends-what-leaders-need-to-know-to-stay-competitive/); users expect to ask questions naturally without learning commands | Low | ✅ Already have: LLM handles this via triage/smart delegation |
-| **Multi-Turn Context** | [Engineers can push assistants into longer conversations, switching topics while still being understood](https://www.getguru.com/reference/ai-assistant) | Low | ✅ Already have: Smart agent maintains chat history in session |
-| **Tool Integration (Gmail, Calendar, Tasks)** | [Context access is the factor that matters most in 2026](https://www.imd.org/ibyimd/artificial-intelligence/2026-ai-trends-what-leaders-need-to-know-to-stay-competitive/); assistants without real-world tool access feel like toys | Medium | ✅ Already have: Gmail, Linear, Notion integrations |
-| **Tool Calling Reliability** | [Tool execution complexity is the most common engineering failure point](https://composio.dev/blog/best-ai-agent-builders-and-integrations); [auth, rate limits, compliance logging separate prototypes from production](https://composio.dev/blog/ai-agent-tool-calling-guide) | High | ⚠️ Partial: Have tool execution but no retry logic, rate limit handling, or credential rotation |
-| **Persistent Memory** | [Users save 8-15 hours weekly when AI remembers context](https://plurality.network/blogs/ai-long-term-memory-with-ai-context-flow/); forgetting past conversations is unacceptable | High | ❌ Missing: Sessions lost on restart, no long-term memory storage |
-| **Fast Response Times** | [Sub-100ms latency becoming expected for voice interfaces](https://www.imd.org/ibyimd/artificial-intelligence/2026-ai-trends-what-leaders-need-to-know-to-stay-competitive/); for text, <2s feels instant | Low | ✅ Already have: Triage model provides fast responses |
-| **Mode/Context Switching** | [Context loss causes 40% productivity drop when switching tools](https://plurality.network/blogs/universal-ai-context-to-switch-ai-tools/); users expect work/personal separation | Medium | ✅ Already have: `/mode` command switches configs |
-| **Error Graceful Degradation** | Users expect clear error messages and partial functionality when services fail | Medium | ✅ Already have: Integrations disable gracefully, errors surfaced to user |
-| **Status Awareness** | Users need to know if the assistant is "thinking," "waiting," or "done" | Low | ✅ Already have: Status reporter broadcasts session updates |
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| **HTTP tool invoke API** | Any surface (Telegram, iOS, CLI, future web) calls same tools. Single source of truth. | LOW | `POST /tools/invoke` with bearer auth. Already have Gateway HTTP+WS multiplex. OpenClaw pattern: tool name, args, optional sessionKey. Unifies MCP bridge (text) + llm.tool() (voice). |
+| **Local embeddings option** | Privacy-first users want memory search without cloud API calls. Zero marginal cost. | MEDIUM | `node-llama-cpp` with `ggml-org/embeddinggemma-300M-GGUF` (~0.6 GB). Auto-downloads on first use. Fallback chain: local → OpenAI → Gemini → Voyage. |
+| **Hybrid vector + BM25 with graceful degradation** | If embeddings fail (API down, quota exceeded), BM25 keyword search still works. | MEDIUM | Union retrieval: vector OR BM25 contribute to results. If embeddings unavailable, BM25-only mode. Better than total failure. |
+| **Session memory indexing** | Agent can search its own session transcripts, not just curated memory. Useful for "what did you say 20 messages ago?" | HIGH | Experimental feature in OpenClaw. Index JSONL session logs with debounced updates (~100 KB or 50 lines). Async, never blocks search. Defer to v2.1+. |
+| **Memory citations** | Tool results include "Source: memory/2026-02-11.md#42" footer. Transparency + debugging. | LOW | Optional footer on memory_search results. OpenClaw `memory.citations = "auto"`. Easy to add once search works. |
+| **Workspace git integration** | Auto-commit memory changes with timestamps. Recoverable history, audit trail. | LOW | Already have best-effort git commits for audit trail (v1.0 pattern). Extend to workspace. Private repo backup recommended (OpenClaw convention). |
 
-### Dependencies
+### Anti-Features (Commonly Requested, Often Problematic)
+
+Features that seem good but create problems in personal AI assistants.
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Real-time memory sync across all sessions** | Users want instant propagation: update SOUL.md in session A, session B sees it immediately. | File watchers + index invalidation add complexity. Race conditions on concurrent writes. Memory writes are rare; polling/restart is fine. | Memory changes take effect on next session start. Agent can notify user "Updated SOUL.md, restart to apply." Simpler, no race conditions. |
+| **Vector database as external service** | "Proper" architecture uses Pinecone/Qdrant/Chroma as separate service. | Single-user assistant doesn't need external DB. SQLite with sqlite-vec runs anywhere, zero ops. ChromaDB doesn't scale to 50M vectors but jarvis has <10K memory chunks. | SQLite with sqlite-vec extension for vector index. Embedding cache in SQLite. Matches OpenClaw. Production-grade for single user. |
+| **Multi-model embedding ensemble** | "Better retrieval" by combining OpenAI + Voyage + local embeddings. | Embeddings must be same dimensionality to compare. Can't mix 1536-dim (OpenAI) with 384-dim (local) in one index. Reindex on model change is expensive. | Single embedding model per index. Provider auto-selection fallback chain: local → OpenAI → Gemini. Reindex on provider/model change (fingerprint in index). |
+| **Infinite context window = no memory needed** | Claude Opus 4.5 has 400K tokens, Gemini 3 Pro has 2M. Just inject everything. | Cost: $3/M input tokens × 400K = $1.20 per message at scale. Latency: 400K tokens = seconds to process. Memory is index, not dump. | Selective retrieval: memory_search returns top-K relevant chunks. Typically 3-5 snippets (~2K tokens total) vs. full 400K context. 200x cost reduction. |
+| **Automatic memory categorization** | AI auto-tags memories as "work", "personal", "preferences", etc. | Tags drift without clear criteria. Users expect control. Over-engineering for single-user assistant. | Simple two-tier structure: `MEMORY.md` (curated facts) + `memory/YYYY-MM-DD.md` (daily logs). Agent decides where to write based on durability. User can manually curate. |
+| **Memory compaction/summarization** | Daily logs grow unbounded. Auto-summarize old entries to save space. | Risk: summarization loses details. "I mentioned a bug in version X" → summarized as "discussed bugs" → unsearchable. Disk is cheap. | Keep all daily logs. SQLite FTS5 + vector index handle thousands of files efficiently. Summarization as manual/future feature if needed. Index growth is the constraint, not file count. |
+
+## Feature Dependencies
+
 ```
-Natural Conversation → Multi-Turn Context (requires conversation history)
-Tool Integration → Tool Calling Reliability (tools must execute successfully)
-Persistent Memory → Mode/Context Switching (modes need to persist across sessions)
-```
+[HTTP Tool Invoke API]
+    └──requires──> [Canonical Tool Registry]
+                       └──requires──> [Tool Definition Schema]
 
----
+[Semantic Memory Search]
+    └──requires──> [Vector Embeddings]
+                       └──requires──> [Embedding Provider (local or cloud)]
+    └──requires──> [BM25 Full-Text Search]
+                       └──requires──> [SQLite FTS5]
 
-## Differentiators
+[Pre-Compaction Memory Flush]
+    └──requires──> [Context Token Counting]
+    └──requires──> [File-Based Memory Storage]
 
-Features that set a self-hosted personal assistant apart from commercial alternatives. Not expected, but highly valued by target users.
+[Soul/Identity System]
+    └──requires──> [Workspace Structure]
+                       └──requires──> [File Loading on Session Start]
 
-| Feature | Value Proposition | Complexity | Implementation Notes |
-|---------|-------------------|------------|---------------------|
-| **Two-Tier Triage/Delegation** | Reduces costs by 80-90% vs. always-smart routing while maintaining quality; [cheap models handle 60-70% of queries](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) | Medium | ✅ Already have: Haiku triage → Opus/Sonnet delegation |
-| **Autonomous Self-Configuration** | [Agents modify their own code, install skills, debug across machines](https://medium.com/@gemQueenx/what-is-openclaw-open-source-ai-agent-in-2026-setup-features-8e020db20e5e); reduces manual config burden | High | ❌ Missing: Agent can't read/write own config yet |
-| **Coding Agent Delegation** | [Developers delegate 0-20% of tasks fully but use AI in 60% of work](https://www.adwaitx.com/anthropic-2026-agentic-coding-trends-ai-agents/); specialized coding agent handles dev work better than general assistant | High | 🔄 Planned: pi-coding-agent integration |
-| **Privacy-First Self-Hosted** | [Memory, message history, files stay on your hardware with no third-party training](https://medium.com/@gemQueenx/clawdbot-ai-the-revolutionary-open-source-personal-assistant-transforming-productivity-in-2026-6ec5fdb3084f) | Low | ✅ Already have: Runs on user's VPS, no data sharing |
-| **Deep System Access** | [Unlike ChatGPT, can access filesystem, browser, email, smart home](https://medium.com/@gemQueenx/clawdbot-ai-the-revolutionary-open-source-personal-assistant-transforming-productivity-in-2026-6ec5fdb3084f); enables real automation | Medium-High | ⚠️ Partial: Have Gmail/Linear/Notion, no filesystem/browser yet |
-| **Semantic Memory Search** | [RAG with vector DB enables semantic retrieval of past conversations and documents](https://www.techment.com/blogs/rag-in-2026-enterprise-ai/) faster than keyword search | High | ❌ Missing: No vector DB, no semantic search |
-| **Proactive Notifications** | [Sends reminders based on traffic conditions, delivers morning briefings](https://medium.com/@gemQueenx/clawdbot-ai-the-revolutionary-open-source-personal-assistant-transforming-productivity-in-2026-6ec5fdb3084f); agent reaches out rather than waiting | Medium | ⚠️ Partial: Have cron jobs but no context-aware triggers |
-| **Multi-Agent Orchestration** | [Specialized agents collaborating on complex workflows is the real transformation](https://www.techradar.com/pro/five-ai-agent-predictions-for-2026-the-year-enterprises-stop-waiting-and-start-winning), not just single-task automation | High | 🔄 Planned: Coding agent is first step toward multi-agent |
-| **Agent Writes Its Own Tools** | [Moltbot builds new skills for itself based on needs](https://medium.com/@gemQueenx/what-is-openclaw-open-source-ai-agent-in-2026-setup-features-8e020db20e5e); ultimate customization | Very High | ❌ Out of scope: Extremely complex, security risks |
+[Memory Search Tool]
+    └──requires──> [Semantic Memory Search]
+    └──requires──> [Memory File Chunking]
 
-### Dependencies
-```
-Two-Tier Triage → Tool Integration (delegation needs tools to execute)
-Coding Agent Delegation → Multi-Agent Orchestration (coding agent is specialized sub-agent)
-Semantic Memory → Persistent Memory (need storage layer first)
-Proactive Notifications → Persistent Memory (need to recall context for triggers)
-Agent Writes Tools → Autonomous Self-Configuration (self-modifying code foundation)
-```
+[Local Embeddings] ──enhances──> [Semantic Memory Search] (privacy, zero cost)
 
----
+[Session Memory Indexing] ──requires──> [Semantic Memory Search] (uses same index)
+                          ──conflicts──> [MVP timeline] (experimental, defer)
 
-## Anti-Features
-
-Features to explicitly NOT build. Common mistakes or feature creep that harms the product.
-
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| **Super-Agent with Every Tool** | [Creating ONE "super agent" with every possible tool is a critical mistake](https://www.langflow.org/blog/top-three-mistakes-building-agents); impossible to maintain, confusing delegation | Use [specialized agents for specific tasks](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) — coding agent, email agent, research agent |
-| **Web UI Dashboard** | Adds maintenance burden, contradicts "Telegram is the interface" philosophy | Telegram handles all interaction; status via `/sessions` command |
-| **Multi-User Support** | [Multi-tenancy requires credential management for thousands of users, auth complexity](https://composio.dev/blog/ai-agent-tool-calling-guide) | Single-user design allows aggressive assumptions (one set of creds, one filesystem) |
-| **Voice Interface** | [Voice requires 99.5% accuracy with sub-100ms latency](https://www.imd.org/ibyimd/artificial-intelligence/2026-ai-trends-what-layers-need-to-know-to-stay-competitive/); adds complexity without value for text-first workflow | Telegram voice messages can be transcribed by LLM if needed |
-| **Built-in RAG for All Documents** | [Vector DB market exploded but contextual/agentic memory surpassing RAG for many use cases](https://venturebeat.com/data/six-data-shifts-that-will-shape-enterprise-ai-in-2026/) | Integrate with Exa web search for external knowledge; persistent memory for personal context |
-| **MCP Server Support** | [Pi-mono philosophy: agent extends itself, no external tool registries](https://medium.com/@gemQueenx/what-is-openclaw-open-source-ai-agent-in-2026-setup-features-8e020db20e5e); MCP adds abstraction layer with unclear benefit | Write integrations directly as TypeScript packages |
-| **Unlimited Context Windows** | [Quality of data matters more than quantity](https://www.applaudhr.com/blog/artificial-intelligence/5-common-mistakes-to-avoid-when-implementing-ai-in-hr); long contexts cause hallucinations | Summarize and extract key points; semantic search for retrieval |
-| **"AI Will Solve Everything" Expectations** | [Expecting AI to solve all problems instantly or operate flawlessly from day one causes disappointment](https://www.applaudhr.com/blog/artificial-intelligence/5-common-mistakes-to-avoid-when-implementing-ai-in-hr) | Set clear boundaries: [explicit permission to say "I don't know" prevents hallucinations](https://github.com/danielmiessler/Personal_AI_Infrastructure) |
-| **Always-On Proactive Agent** | Risks becoming annoying spam; [speed can replace command judgment](https://warontherocks.com/2026/01/the-triage-trap-when-ai-speed-replaces-command-judgment/) | Proactive only for high-signal triggers (calendar, cron); otherwise reactive |
-
-### Key Design Principle
-> [AI is probabilistic; your infrastructure shouldn't be. If you can solve it with a bash script, don't use AI.](https://github.com/danielmiessler/Personal_AI_Infrastructure)
-
----
-
-## Feature Complexity Analysis
-
-Complexity is a function of: (1) technical implementation difficulty, (2) testing/reliability burden, (3) maintenance/evolution cost.
-
-### Low Complexity (1-3 days)
-- Natural conversation (LLM handles)
-- Fast response times (model selection)
-- Status awareness (polling + broadcasts)
-- Privacy-first self-hosted (deployment model)
-
-### Medium Complexity (1-2 weeks)
-- Multi-turn context (session management)
-- Mode/context switching (config system)
-- Error graceful degradation (try/catch + fallbacks)
-- Two-tier triage/delegation (routing logic)
-- Proactive notifications (cron + context checks)
-- Deep system access - basic (filesystem tools)
-
-### High Complexity (3-6 weeks)
-- Tool integration (OAuth, SDKs, error handling)
-- **Tool calling reliability (auth, rate limits, retries)** ← Highest risk area
-- Persistent memory (storage layer + retrieval)
-- Autonomous self-configuration (config read/write + validation)
-- Coding agent delegation (pi-coding-agent integration)
-- Semantic memory search (vector DB + embeddings)
-- Multi-agent orchestration (coordinator pattern)
-
-### Very High Complexity (2-3 months)
-- Deep system access - advanced (browser automation, smart home)
-- Agent writes its own tools (code generation + sandboxing + security)
-
-### Complexity vs. Value Matrix
-
-**High Value, Low/Medium Complexity (do first):**
-- Two-tier triage/delegation ✅
-- Persistent memory (JSON files, not vector DB)
-- Autonomous self-configuration
-- Proactive notifications (cron-based)
-
-**High Value, High Complexity (defer but plan):**
-- Tool calling reliability improvements
-- Semantic memory search
-- Multi-agent orchestration
-
-**Low Value, High Complexity (avoid):**
-- Agent writes its own tools
-- Always-on proactive agent
-- Web UI dashboard
-
----
-
-## MVP Recommendation
-
-For the **Jarvis** project (Telegram-based self-hosted assistant), prioritize this order:
-
-### Phase 1: Foundation (Table Stakes)
-1. ✅ **Two-tier triage/delegation** — already working
-2. ✅ **Tool integration (Gmail, Linear, Notion)** — already working
-3. ❌ **Persistent memory (simple JSON storage)** — agent can store/retrieve preferences
-4. ❌ **Tool calling reliability** — retry logic, better error messages, rate limit awareness
-
-### Phase 2: Differentiation
-5. ❌ **Autonomous self-configuration** — agent reads/writes its own config
-6. ❌ **Coding agent delegation** — integrate pi-coding-agent
-7. ❌ **Mode switching via Telegram** — `/mode work` command
-8. ❌ **Exa web search** — external knowledge without RAG complexity
-
-### Phase 3: Advanced (Post-MVP)
-9. ❌ **Semantic memory search** — vector DB for conversation history (only if JSON storage insufficient)
-10. ❌ **Multi-agent orchestration** — coordinator pattern for specialized agents
-11. ❌ **Deep system access** — filesystem, browser tools (security-hardened)
-
-### Defer Indefinitely
-- Agent writes its own tools (security nightmare)
-- Web UI (contradicts design philosophy)
-- Multi-user support (not target use case)
-- Voice interface (text-first workflow)
-- MCP support (pi-mono philosophy)
-
----
-
-## Critical Dependencies
-
-Features must be built in this order due to hard dependencies:
-
-```mermaid
-graph TD
-    A[Natural Conversation] --> B[Multi-Turn Context]
-    B --> C[Tool Integration]
-    C --> D[Tool Calling Reliability]
-    C --> E[Two-Tier Triage]
-    E --> F[Coding Agent Delegation]
-    F --> G[Multi-Agent Orchestration]
-
-    H[Persistent Memory] --> I[Semantic Memory]
-    H --> J[Mode Switching]
-    H --> K[Proactive Notifications]
-
-    L[Autonomous Self-Config] --> M[Agent Writes Tools]
-
-    D -.->|improves| C
-    I -.->|enhances| H
-    K -.->|uses| H
+[Memory Citations] ──enhances──> [Memory Search Tool] (transparency, debugging)
 ```
 
-**Legend:**
-- Solid arrows: Hard dependency (must build A before B)
-- Dotted arrows: Soft dependency (B improves A but not required)
+### Dependency Notes
 
----
+- **Memory Search Tool requires Semantic Memory Search:** Can't expose a tool without the underlying search capability. Search must work before tool is enabled.
+- **Semantic Memory Search requires Vector Embeddings + BM25:** Hybrid approach needs both. BM25 is fallback if embeddings fail.
+- **Pre-Compaction Memory Flush requires Context Token Counting:** Must know when to trigger flush (soft threshold at ~75% of context limit).
+- **HTTP Tool Invoke API requires Canonical Tool Registry:** Single source of truth for tools. Registry must exist before HTTP endpoint can invoke tools.
+- **Local Embeddings enhances Semantic Memory Search:** Optional privacy/cost improvement. Search works with cloud APIs if local unavailable.
+- **Session Memory Indexing conflicts with MVP timeline:** Experimental feature. Adds debounced indexing, async complexity. Defer to v2.1+ after core memory works.
+
+## MVP Definition
+
+### Launch With (v2.0)
+
+Minimum viable product for persistent memory + identity + shared tools.
+
+- [x] **Workspace structure** — Foundation for all file-based features. `~/.jarvis/workspace/` with standard file locations.
+- [x] **SOUL.md identity system** — Agent reads identity on session start. Personality continuity across sessions.
+- [x] **File-based memory storage** — `MEMORY.md` + `memory/YYYY-MM-DD.md`. Agent can write, files persist across sessions.
+- [x] **Memory file chunking** — Split Markdown into ~400 token chunks with 80-token overlap for indexing. Required for search.
+- [x] **SQLite vector index (sqlite-vec)** — Embedding storage with cosine similarity. Foundation for semantic search.
+- [x] **BM25 full-text search (FTS5)** — Keyword search for exact tokens. Complements vector search.
+- [x] **Hybrid memory search** — Combine vector + BM25 with configurable weights (70/30 default). Union retrieval.
+- [x] **memory_search tool** — Agent-facing tool to retrieve relevant memory chunks by semantic query.
+- [x] **Embedding provider fallback chain** — Local → OpenAI → Gemini → Voyage. Graceful degradation if provider fails.
+- [x] **Pre-compaction memory flush** — Silent turn at soft threshold (~75% context). Agent saves memories before compaction.
+- [x] **HTTP tool invoke API** — `POST /tools/invoke` with bearer auth. Any surface calls same tools.
+- [x] **Canonical tool registry** — Single registry with policy/allowlist support. Replaces separate MCP bridge + llm.tool() definitions.
+
+### Add After Validation (v2.1+)
+
+Features to add once core memory + identity + tools are working and validated.
+
+- [ ] **memory_get tool** — Read specific memory files by path with line range. Complement to memory_search. Trigger: Users request "show me my full MEMORY.md" or need precise line ranges.
+- [ ] **Memory citations** — "Source: memory/2026-02-11.md#42" footer on search results. Trigger: Users ask "where did you read that?" or debugging retrieval.
+- [ ] **Workspace git auto-commit** — Extend v1.0 git pattern to workspace. Commit memory changes with timestamps. Trigger: Users want audit trail for memory edits.
+- [ ] **Local embeddings (node-llama-cpp)** — Privacy-first option. Zero marginal cost. Trigger: Users concerned about API calls or embedding costs exceed $5/month.
+- [ ] **Embedding cache optimization** — SQLite cache for chunk embeddings (avoid re-embedding unchanged text). Trigger: Reindexing takes >30 seconds on workspace changes.
+- [ ] **USER.md file** — User identity, preferences, addressing conventions. Trigger: Users want to customize how agent addresses them or stores bio.
+
+### Future Consideration (v2.2+)
+
+Features to defer until product-market fit is established for memory system.
+
+- [ ] **Session memory indexing** — Index JSONL session transcripts for in-session search. Trigger: Users frequently ask "what did you say 10 messages ago?" Experimental, async complexity.
+- [ ] **QMD search backend** — Alternative search with Bun + reranking. Trigger: Hybrid search quality insufficient or users request better ranking. OpenClaw experimental feature.
+- [ ] **Memory compaction/summarization** — Auto-summarize old daily logs to reduce index size. Trigger: Index size exceeds 100K chunks or search slows to >1 second.
+- [ ] **HEARTBEAT.md / BOOT.md** — Startup checklists for gateway restarts and routine runs. Trigger: Users want scheduled maintenance tasks or startup rituals.
+- [ ] **TOOLS.md conventions** — Local tool notes (calendar IDs, contact info). Trigger: Users manage many local references that don't fit SOUL.md or MEMORY.md.
+- [ ] **Multi-workspace support** — Switch between work/personal workspaces. Trigger: Users need strict separation (not just mode context). Currently modes cover use case.
+
+## Feature Prioritization Matrix
+
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Workspace structure | HIGH | LOW | P1 |
+| SOUL.md identity | HIGH | LOW | P1 |
+| File-based memory | HIGH | LOW | P1 |
+| Memory chunking | HIGH | MEDIUM | P1 |
+| SQLite vector index | HIGH | MEDIUM | P1 |
+| BM25 full-text search | HIGH | MEDIUM | P1 |
+| Hybrid search | HIGH | MEDIUM | P1 |
+| memory_search tool | HIGH | LOW | P1 |
+| Provider fallback chain | MEDIUM | LOW | P1 |
+| Pre-compaction flush | HIGH | MEDIUM | P1 |
+| HTTP tool invoke API | HIGH | LOW | P1 |
+| Canonical tool registry | HIGH | MEDIUM | P1 |
+| memory_get tool | MEDIUM | LOW | P2 |
+| Memory citations | MEDIUM | LOW | P2 |
+| Workspace git commits | MEDIUM | LOW | P2 |
+| Local embeddings | MEDIUM | MEDIUM | P2 |
+| Embedding cache | MEDIUM | MEDIUM | P2 |
+| USER.md file | LOW | LOW | P2 |
+| Session memory indexing | LOW | HIGH | P3 |
+| QMD search backend | LOW | HIGH | P3 |
+| Memory compaction | LOW | MEDIUM | P3 |
+| HEARTBEAT.md / BOOT.md | LOW | LOW | P3 |
+| TOOLS.md conventions | LOW | LOW | P3 |
+| Multi-workspace support | LOW | MEDIUM | P3 |
+
+**Priority key:**
+- P1: Must have for launch (v2.0)
+- P2: Should have, add when possible (v2.1)
+- P3: Nice to have, future consideration (v2.2+)
+
+## Competitor Feature Analysis
+
+| Feature | OpenClaw | Mem0.ai | Jarvis Approach |
+|---------|----------|---------|-----------------|
+| **Memory storage** | Markdown files (`MEMORY.md` + daily logs) | Database (PostgreSQL, Qdrant, etc.) | Markdown files (matches OpenClaw, agent-readable) |
+| **Search method** | Hybrid vector (sqlite-vec) + BM25 (FTS5) | Vector only (multiple backend options) | Hybrid vector + BM25 (best of both: semantic + exact) |
+| **Identity system** | SOUL.md + USER.md + IDENTITY.md | Personality as graph nodes | SOUL.md (simpler, file-based, version-controllable) |
+| **Embedding providers** | Local (node-llama-cpp) → OpenAI → Gemini → Voyage | OpenAI, Azure, Anthropic, Google, Hugging Face, Ollama, Together, Groq | Local → OpenAI → Gemini → Voyage (privacy-first fallback chain) |
+| **Vector storage** | SQLite with sqlite-vec extension | Qdrant, Chroma, Milvus, Pgvector, Redis, Azure AI Search | SQLite with sqlite-vec (zero ops, runs anywhere) |
+| **Multi-surface tools** | HTTP API (`/tools/invoke`) + built-in registry | Not applicable (memory service, not assistant) | HTTP API + canonical tool registry (unifies surfaces) |
+| **Pre-compaction flush** | Silent turn at soft threshold, writes to disk | Not applicable (no session management) | Silent turn at 75% context, writes to memory files |
+| **Workspace conventions** | `~/.openclaw/workspace/` with standard file layout | Not applicable | `~/.jarvis/workspace/` (follows OpenClaw conventions) |
+| **Graceful degradation** | BM25 fallback if embeddings fail | Requires vector backend configured | BM25 fallback + provider chain (continues working if one provider down) |
+| **Session memory** | Experimental: index session transcripts | Not applicable | Defer to v2.1+ (experimental, high complexity) |
+
+**Key differentiators vs. OpenClaw:**
+- Jarvis is single-user assistant (no multi-agent, no Moltbook social network)
+- Simpler file structure (no HEARTBEAT.md, BOOT.md, TOOLS.md in MVP)
+- Focus on multi-surface tool unification (HTTP API critical for Telegram + iOS + CLI)
+
+**Key differentiators vs. Mem0.ai:**
+- Mem0 is a memory service/library; Jarvis is a full assistant
+- Jarvis uses file-based memory (agent-readable, version-controllable, transparent)
+- Mem0 supports multi-tenant; Jarvis is single-user (simpler architecture)
+
+## Implementation Complexity Assessment
+
+### Low Complexity (1-2 days)
+
+- **Workspace structure:** Create `~/.jarvis/workspace/` directory, define standard file paths
+- **SOUL.md identity:** Load file at session start, inject into system prompt
+- **File-based memory:** Write functions to append to `MEMORY.md` and `memory/YYYY-MM-DD.md`
+- **memory_get tool:** Read file by path, return lines (validation + policy checks)
+- **Memory citations:** Append "Source: <path>#<line>" to memory_search results
+- **HTTP tool invoke API:** Add POST endpoint to existing Gateway HTTP handler
+- **Provider fallback chain:** Try providers in sequence until one succeeds
+
+### Medium Complexity (3-5 days)
+
+- **Memory chunking:** Split Markdown into ~400 token chunks with 80-token overlap (sliding window)
+- **SQLite vector index:** Integrate sqlite-vec, create virtual table, insert/query embeddings
+- **BM25 full-text search:** Create FTS5 table, index chunks, query with rank conversion
+- **Hybrid search:** Combine vector + BM25 results, union by chunk ID, weighted scoring
+- **memory_search tool:** Implement search logic, return snippets with metadata, cap at 700 chars
+- **Pre-compaction flush:** Token counting, soft threshold detection, silent turn injection
+- **Canonical tool registry:** Unify tool definitions, add policy/allowlist support
+- **Embedding cache:** SQLite cache table, fingerprint-based invalidation
+- **Local embeddings:** Integrate node-llama-cpp, auto-download GGUF model, fallback chain
+
+### High Complexity (1-2 weeks)
+
+- **Session memory indexing:** Debounced JSONL indexing, async updates, delta thresholds, never block search
+- **QMD search backend:** External Bun process, HuggingFace GGUF downloads, reranking, fallback handling
+- **Memory compaction/summarization:** Summarization prompts, validation, risk of detail loss, manual curation flow
+
+## Current State Analysis (What Already Exists)
+
+**From v1.0:**
+- JSONL session logs (append-only, max 50 messages) → extend to daily memory logs
+- JSON preference files → pattern extends to SOUL.md, MEMORY.md
+- Confirmation flow for config changes → reuse for memory writes
+- Best-effort git commits for audit trail → extend to workspace
+- Claude Code SDK agent with streaming → memory tools integrate naturally
+- Gateway HTTP+WS multiplex → add `/tools/invoke` endpoint
+- Extension API for integrations → canonical tool registry builds on this
+- TypeBox validation → validate tool schemas, memory file writes
+
+**Gaps to fill:**
+- No vector embeddings (add sqlite-vec + embedding providers)
+- No semantic search (add hybrid vector + BM25)
+- No workspace structure (create `~/.jarvis/workspace/`)
+- No identity system (add SOUL.md loading)
+- No pre-compaction flush (add token counting + silent turn)
+- Tools defined separately per surface (unify into canonical registry)
+
+**Leverage existing patterns:**
+- Atomic writes with TypeBox validation → memory file writes
+- Extension lifecycle → tool registry lifecycle
+- Confirmation flow → memory write confirmation (optional)
+- Git audit trail → workspace commits
 
 ## Sources
 
-### Self-Hosted AI Assistants
-- [Clawdbot AI: The Revolutionary Open-Source Personal Assistant Transforming Productivity in 2026](https://medium.com/@gemQueenx/clawdbot-ai-the-revolutionary-open-source-personal-assistant-transforming-productivity-in-2026-6ec5fdb3084f)
-- [What is OpenClaw: Open-Source AI Agent in 2026 (Setup + Features)](https://medium.com/@gemQueenx/what-is-openclaw-open-source-ai-agent-in-2026-setup-features-8e020db20e5e)
-- [Moltbot (formerly Clawdbot) 101: the viral self-hosted AI assistant](https://medium.com/@ilanpoonjolai/moltbot-formerly-clawdbot-101-the-viral-self-hosted-ai-assistant-that-lives-in-your-chats-47000580e320)
-- [Introducing Moltworker: a self-hosted personal AI agent](https://blog.cloudflare.com/moltworker-self-hosted-ai-agent/)
+**OpenClaw Documentation & Implementation:**
+- [OpenClaw Memory System](https://docs.openclaw.ai/concepts/memory) — File structure, pre-compaction flush, vector+BM25 hybrid search, configuration
+- [OpenClaw SOUL.md Template](https://github.com/openclaw/openclaw/blob/main/docs/reference/templates/SOUL.md) — Identity file structure, core truths, boundaries, continuity
+- [OpenClaw Session Management & Compaction](https://docs.openclaw.ai/reference/session-management-compaction) — Token thresholds, reserve tokens, compaction triggers, memory flush
+- [OpenClaw Tools Invoke HTTP API](https://docs.openclaw.ai/gateway/tools-invoke-http-api) — Endpoint structure, authentication, request/response format, policy
+- [OpenClaw Agent Workspace](https://docs.openclaw.ai/concepts/agent-workspace) — Directory layout, file conventions, separation of config vs. workspace
+- [OpenClaw and the Programmable Soul](https://duncsand.medium.com/openclaw-and-the-programmable-soul-2546c9c1782c) — SOUL.md philosophy, persistent identity, social context
+- [Agentic AI: OpenClaw Memory Architecture Explained](https://medium.com/@shivam.agarwal.in/agentic-ai-openclaw-moltbot-clawdbots-memory-architecture-explained-61c3b9697488) — Hybrid search, vector+BM25 weights, graceful degradation
+- [Clawdbot Memory Architecture & Pre-Compaction Flush](https://medium.com/aimonks/clawdbots-memory-architecture-pre-compaction-flush-the-engineering-reality-behind-never-c8ff84a4a11a) — Detection, flush action, safe compaction workflow
 
-### AI Agent Architecture & Triage Models
-- [Multi-Agent AI Systems: The Complete Enterprise Guide for 2026](https://neomanex.com/posts/multi-agent-ai-systems-orchestration)
-- [AI Agent Orchestration Patterns - Azure Architecture Center](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns)
-- [A Complete Guide to AI Agent Architecture in 2026](https://www.lindy.ai/blog/ai-agent-architecture)
-- [The 2026 Guide to AI Agent Architecture Components](https://procreator.design/blog/guide-to-ai-agent-architecture-components/)
+**AI Assistant Memory Best Practices:**
+- [Comparing File Systems and Databases for AI Agent Memory](https://medium.com/oracledevs/comparing-file-systems-and-databases-for-effective-ai-agent-memory-management-5322ac45f3b6) — File-based vs. database tradeoffs, virtual filesystem pattern, dual-layer architecture
+- [AI Agent Long-Term Memory: Episodic, Semantic & Procedural](https://fast.io/resources/ai-agent-long-term-memory-solutions/) — Memory types, organization, hot path vs. cold path
+- [Memory Optimization Strategies in AI Agents](https://medium.com/@nirdiamant21/memory-optimization-strategies-in-ai-agents-1f75f8180d54) — Chunking, retrieval, context management
+- [Common AI Agent Development Mistakes and How to Avoid Them](https://www.wildnetedge.com/blogs/common-ai-agent-development-mistakes-and-how-to-avoid-them) — Memory management pitfalls, token costs, reasoning quality
 
-### Persistent Memory & Context
-- [Clawdbot: The Personal AI Assistant That Siri Should Have Been](https://zoopa.es/en/blog/clawdbot-the-personal-ai-assistant-that-siri-should-have-been-complete-guide-2026/)
-- [Universal AI Long-Term Memory: Never Repeat Yourself](https://plurality.network/blogs/ai-long-term-memory-with-ai-context-flow/)
-- [Stop Losing Context When Switching AI Platforms (2026)](https://plurality.network/blogs/universal-ai-context-to-switch-ai-tools/)
-- [Best AI Memory Extensions of 2026](https://plurality.network/blogs/best-universal-ai-memory-extensions-2026/)
+**Vector Embeddings & Search:**
+- [13 Best Embedding Models in 2026](https://elephas.app/blog/best-embedding-models) — OpenAI, Voyage, Gemini, Ollama pricing and performance
+- [Mem0 Graph Memory for AI Agents](https://mem0.ai/blog/graph-memory-solutions-ai-agents) — Hybrid vector+graph retrieval, provider integration, dual deployment model
+- [SQLite-vec GitHub](https://github.com/asg017/sqlite-vec) — Pure C extension, runs anywhere, horizontal scalability
+- [SQLite vs. ChromaDB Comparative Analysis](https://stephencollins.tech/posts/sqlite-vs-chroma-comparative-analysis) — File-based architecture, concurrency limitations, production scale
+- [Best Vector Databases in 2025](https://www.firecrawl.dev/blog/best-vector-databases-2025) — Qdrant, Pinecone, ChromaDB, FAISS comparisons
 
-### Tool Integrations & Calling
-- [Tool Calling Explained: The Core of AI Agents (2026 Guide)](https://composio.dev/blog/ai-agent-tool-calling-guide)
-- [The 2026 Guide to AI Agent Builders (And Why They All Need an Action Layer)](https://composio.dev/blog/best-ai-agent-builders-and-integrations)
-- [Notion AI Connectors Explained: Supercharge Your Toolstack](https://kipwise.com/blog/notion-ai-connectors-explained)
-- [15 Best AI Assistants for Email Productivity in 2026](https://gmelius.com/blog/best-ai-assistants-for-email)
+**Chunking Strategies:**
+- [Finding the Best Chunking Strategy for Accurate AI Responses](https://developer.nvidia.com/blog/finding-the-best-chunking-strategy-for-accurate-ai-responses/) — Token sizes, overlap percentages, adaptive strategies
+- [Chunking Strategies to Improve LLM RAG Pipeline Performance](https://weaviate.io/blog/chunking-strategies-for-rag) — 512 tokens with 50-100 overlap, factoid vs. analytical queries
+- [Evaluating Chunking Strategies for Retrieval](https://research.trychroma.com/evaluating-chunking) — 15% overlap performs best, 256-1024 token range
 
-### Table Stakes & Market Trends
-- [2026 AI trends - Staying Competitive](https://www.imd.org/ibyimd/artificial-intelligence/2026-ai-trends-what-leaders-need-to-know-to-stay-competitive/)
-- [AI Assistant Market Size | Share, Trends & Revenue Forecast](https://www.marketsandmarkets.com/Market-Reports/ai-assistant-market-40111511.html)
-- [16 Best AI Assistant Apps for 2026](https://reclaim.ai/blog/ai-assistant-apps)
-- [AI Assistant: 2026 Ultimate Guide - Definition, Examples & More](https://www.getguru.com/reference/ai-assistant)
+**Tool Registry & Multi-Surface:**
+- [ToolSDK.ai MCP Registry](https://github.com/toolsdk-ai/toolsdk-mcp-registry) — Interoperability standards, A2A + MCP collaboration, agent discovery
+- [Tool Registry - Go beyond simple tool calling](https://www.toolregistry.ai/) — SaaS apps, REST APIs, remote MCP servers, managed integrations
 
-### Coding Agents
-- [Anthropic Unveils 2026 AI Coding Report: 8 Trends Reshape Software Development](https://www.adwaitx.com/anthropic-2026-agentic-coding-trends-ai-agents/)
-- [Cline Review (2026): Autonomous AI Coding Agent for VS Code](https://vibecoding.app/blog/cline-review-2026)
-- [Top 7 AI Coding Agents for 2026: Tested & Ranked](https://www.lindy.ai/blog/ai-coding-agents)
-
-### Anti-Patterns & Pitfalls
-- [Top 3 Mistakes I Made While Building AI Agents](https://www.langflow.org/blog/top-three-mistakes-building-agents)
-- [5 Common Mistakes to Avoid When Implementing AI Assistants](https://www.applaudhr.com/blog/artificial-intelligence/5-common-mistakes-to-avoid-when-implementing-ai-in-hr)
-- [Personal AI Infrastructure - Agentic AI Infrastructure for HUMAN capabilities](https://github.com/danielmiessler/Personal_AI_Infrastructure)
-- [The Triage Trap: When AI Speed Replaces Command Judgment](https://warontherocks.com/2026/01/the-triage-trap-when-ai-speed-replaces-command-judgment/)
-
-### Vector Databases & Semantic Memory
-- [RAG in 2026: How Retrieval-Augmented Generation Works for Enterprise AI](https://www.techment.com/blogs/rag-in-2026-enterprise-ai/)
-- [6 data predictions for 2026: RAG is dead, what's old is new again](https://venturebeat.com/data/six-data-shifts-that-will-shape-enterprise-ai-in-2026)
-- [How Do Vector Databases Power Agentic AI's Memory](https://www.getmonetizely.com/articles/how-do-vector-databases-power-agentic-ais-memory-and-knowledge-systems)
-
-### Proactive Agents & Scheduling
-- [10 Best AI Assistants in 2026](https://www.morgen.so/blog-posts/best-ai-planning-assistants)
-- [I Tested the Top 10 AI Scheduling Assistants in 2026](https://www.lindy.ai/blog/ai-scheduling-assistant)
-- [Top 10 AI Personal Assistants to Help You Ease Your Life [2026]](https://www.lindy.ai/blog/ai-personal-assistant)
-
-### Multi-Agent & Enterprise
-- [Five AI agent predictions for 2026: The year enterprises stop waiting](https://www.techradar.com/pro/five-ai-agent-predictions-for-2026-the-year-enterprises-stop-waiting-and-start-winning)
-- [AI Agent Orchestration in 2026: Coordination, Scale and Strategy](https://kanerika.com/blogs/ai-agent-orchestration/)
+**Workspace Conventions:**
+- [AI Agent Rule / Instruction / Context Files](https://gist.github.com/0xdevalias/f40bc5a6f84c4c5ad862e314894b2fa6) — AGENTS.md, hierarchical layouts, progressive disclosure
+- [A Complete Guide To AGENTS.md](https://www.aihero.dev/a-complete-guide-to-agents-md) — Root-level guidance, package-specific overrides, least privilege principle
 
 ---
-
-*Feature research completed: 2026-02-05*
+*Feature research for: Personal AI Assistant with Persistent Memory & Identity*
+*Researched: 2026-02-12*
