@@ -12,6 +12,8 @@ import {
   AutonomousRunner,
   createIntegrations,
   shutdownIntegrations,
+  WorkspaceManager,
+  WorkspaceGit,
 } from "@jarvis/core";
 import type { ModeConfig } from "@jarvis/core";
 import { Gateway } from "@jarvis/gateway";
@@ -50,6 +52,22 @@ async function main(): Promise<void> {
   if (process.env.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
   if (process.env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
   if (process.env.OPENROUTER_API_KEY) process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+  // --- Initialize workspace ---
+  const workspace = new WorkspaceManager();
+  workspace.ensureWorkspace();
+
+  // Initialize git for audit trail
+  const workspaceGit = new WorkspaceGit(workspace.getWorkspaceDir());
+  await workspaceGit.initRepo();
+
+  // Commit initial SOUL.md if this is first run (git will handle if already committed)
+  await workspaceGit.commitFile("SOUL.md", "Initial SOUL.md from workspace setup");
+
+  // Migrate v1.0 data (idempotent, safe to run every startup)
+  workspace.migrateV1Data();
+
+  console.log(`[startup] Workspace ready at ${workspace.getWorkspaceDir()}`);
 
   // --- Initialize core ---
   const orchestrator = new AgentOrchestrator(configDir);

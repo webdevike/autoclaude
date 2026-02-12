@@ -15,6 +15,7 @@ import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
+import { WorkspaceManager } from "./workspace.js";
 import type { AutonomousRunner } from "./autonomous-runner.js";
 import type {
   AgentResponse,
@@ -286,6 +287,7 @@ export class AgentOrchestrator {
   private preferencesManagers: Map<string, PreferencesManager> = new Map();
   private configDir: string;
   private configManager: ConfigManager;
+  private workspaceManager: WorkspaceManager;
 
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
@@ -318,6 +320,12 @@ export class AgentOrchestrator {
   constructor(configDir?: string) {
     this.configDir = configDir || resolve(process.cwd(), "config");
     this.configManager = new ConfigManager(this.configDir);
+    this.workspaceManager = new WorkspaceManager();
+  }
+
+  /** Get workspace manager instance (for CLI access) */
+  getWorkspaceManager(): WorkspaceManager {
+    return this.workspaceManager;
   }
 
   /** Set callbacks for live cron job management (called by CLI after scheduler is ready) */
@@ -611,8 +619,8 @@ export class AgentOrchestrator {
       }
     }
 
-    // Build system prompt with context and preferences
-    let smartSystemPrompt = modeConfig.systemPrompt;
+    // Build system prompt with SOUL.md, context, and preferences
+    let smartSystemPrompt = this.workspaceManager.buildSystemPrompt(modeConfig.systemPrompt);
     smartSystemPrompt += preferencesSection;
 
     if (contextSummary) {
@@ -702,8 +710,10 @@ export class AgentOrchestrator {
     // Resolve model: per-user override > config default > SDK default
     const model = this.userModelOverrides.get(msg.sender) ?? modeConfig.claudeCode?.model;
 
-    // Build system prompt with skill docs so Claude knows about integrations
-    const systemPrompt = modeConfig.systemPrompt + this.getSkillDocs();
+    // Build system prompt with SOUL.md + skill docs so Claude knows about integrations
+    const systemPrompt = this.workspaceManager.buildSystemPrompt(
+      modeConfig.systemPrompt + this.getSkillDocs()
+    );
 
     // Build or reuse cached MCP servers
     const preferencesManager = this.getPreferencesManager(msg.sender);
