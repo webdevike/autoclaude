@@ -9,7 +9,7 @@
  * - preferences/: User-specific preferences (not tracked by git)
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, copyFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -198,6 +198,88 @@ export class WorkspaceManager {
    */
   getSoulPath(): string {
     return this.soulPath;
+  }
+
+  /**
+   * Migrate v1.0 data (~/.jarvis/sessions/ and ~/.jarvis/users/) to workspace structure.
+   *
+   * Migration paths:
+   * - ~/.jarvis/sessions/{userId}/messages.jsonl → workspace/sessions/{userId}/messages.jsonl
+   * - ~/.jarvis/users/{userId}/preferences.json → workspace/preferences/{userId}.json
+   *
+   * Features:
+   * - Idempotent: checks workspace/.migrated-from-v1 marker file
+   * - Copy operation (not move) - v1.0 files remain as backup
+   * - Non-fatal: logs warnings but never throws errors
+   * - Creates migration marker with timestamp and counts
+   */
+  migrateV1Data(): void {
+    try {
+      // Check migration marker
+      const markerPath = resolve(this.workspaceDir, ".migrated-from-v1");
+      if (existsSync(markerPath)) {
+        console.log("[workspace] v1.0 migration already completed, skipping");
+        return;
+      }
+
+      let sessionsCopied = 0;
+      let preferencesCopied = 0;
+
+      // Migrate sessions: ~/.jarvis/sessions/{userId}/messages.jsonl
+      const oldSessionsDir = resolve(homedir(), ".jarvis", "sessions");
+      if (existsSync(oldSessionsDir)) {
+        try {
+          const userIds = readdirSync(oldSessionsDir);
+          for (const userId of userIds) {
+            const oldMessagesPath = resolve(oldSessionsDir, userId, "messages.jsonl");
+            const newSessionDir = resolve(this.sessionsSubdir, userId);
+            const newMessagesPath = resolve(newSessionDir, "messages.jsonl");
+
+            // Copy if source exists and destination doesn't
+            if (existsSync(oldMessagesPath) && !existsSync(newMessagesPath)) {
+              mkdirSync(newSessionDir, { recursive: true });
+              copyFileSync(oldMessagesPath, newMessagesPath);
+              sessionsCopied++;
+              console.log(`[workspace] Migrated session log for ${userId}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[workspace] Failed to migrate sessions: ${err}`);
+        }
+      }
+
+      // Migrate preferences: ~/.jarvis/users/{userId}/preferences.json
+      const oldUsersDir = resolve(homedir(), ".jarvis", "users");
+      if (existsSync(oldUsersDir)) {
+        try {
+          const userIds = readdirSync(oldUsersDir);
+          for (const userId of userIds) {
+            const oldPrefsPath = resolve(oldUsersDir, userId, "preferences.json");
+            const newPrefsPath = resolve(this.preferencesSubdir, `${userId}.json`);
+
+            // Copy if source exists and destination doesn't
+            if (existsSync(oldPrefsPath) && !existsSync(newPrefsPath)) {
+              copyFileSync(oldPrefsPath, newPrefsPath);
+              preferencesCopied++;
+              console.log(`[workspace] Migrated preferences for ${userId}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[workspace] Failed to migrate preferences: ${err}`);
+        }
+      }
+
+      // Write migration marker
+      const markerContent = `Migrated from v1.0 on ${new Date().toISOString()}
+Sessions copied: ${sessionsCopied}
+Preferences copied: ${preferencesCopied}
+`;
+      this.atomicWriteFile(markerPath, markerContent);
+
+      console.log(`[workspace] v1.0 migration complete: ${sessionsCopied} sessions, ${preferencesCopied} preferences`);
+    } catch (err) {
+      console.warn(`[workspace] v1.0 migration failed (non-fatal): ${err}`);
+    }
   }
 
   /**
