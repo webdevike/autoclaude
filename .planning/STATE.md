@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-02-12)
 ## Current Position
 
 Phase: 5 of 9 (Workspace & Identity Foundation)
-Plan: 2 (just completed 05-01)
+Plan: 3 (just completed 05-02)
 Status: In progress
-Last activity: 2026-02-12 - Completed 05-01 Workspace Identity Foundation
+Last activity: 2026-02-12 - Completed 05-02 Workspace Integration & v1.0 Migration
 
-Progress: [████░░░░░░] 48% (12/25 plans total, 11 from v1.0 complete, 1 from v2.0)
+Progress: [████░░░░░░] 52% (13/25 plans total, 11 from v1.0 complete, 2 from v2.0)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12 (11 from v1.0, 1 from v2.0)
-- Average duration: 2 minutes (v2.0 only)
+- Total plans completed: 13 (11 from v1.0, 2 from v2.0)
+- Average duration: 2.5 minutes (v2.0 only)
 - v1.0 execution time: ~2 days (2026-02-05 → 2026-02-06)
-- v2.0 execution time: 2 minutes (2026-02-12)
+- v2.0 execution time: 5 minutes total (2026-02-12)
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: [████░░░░░░] 48% (12/25 plans total, 11 from v1.0 
 | 2. Agent Core & Extensions | 3 | - | - |
 | 3. Preferences & Configuration | 3 | - | - |
 | 4. Cron Execution | 2 | - | - |
-| 5. Workspace & Identity | 1 | 2 min | 2 min |
+| 5. Workspace & Identity | 2 | 5 min | 2.5 min |
 
 **Recent Trend:**
-- Phase 5 started strong: 2 minutes for foundational workspace classes
+- Phase 5 maintaining velocity: 2 min for foundation, 3 min for integration/migration
 
 ## Accumulated Context
 
@@ -49,6 +49,8 @@ Recent decisions affecting v2.0 work:
 - **Claude Code SDK as default agent**: Powerful tool use, streaming, session resumption - replaced pi-coding-agent in v1.0
 - **SOUL.md character limits** (Phase 5): Warning at 6000 chars (~1500 tokens), hard error at 12000 chars (~3000 tokens) to balance expressiveness with context budget
 - **Best-effort git operations** (Phase 5): Git failures log warnings but never throw errors - audit trail is valuable but not critical to agent operations
+- **v1.0 migration strategy** (Phase 5): Copy (not move) v1.0 data to workspace with idempotent marker file - preserves backups and runs safely on every startup
+- **SOUL.md injection** (Phase 5): Workspace prepends SOUL.md to system prompt for both Claude Code and Pi-AI agent paths - identity now drives every message
 
 Key patterns from v1.0:
 - Confirmation flow for all config changes
@@ -65,7 +67,7 @@ None yet.
 **Phase 5 (Workspace & Identity):**
 - SOUL.md security: Must prevent prompt injection attacks. Agent should NOT write to SOUL.md without explicit confirmation. Git integrity checks required.
 - Context window budget: SOUL.md (500-2k tokens) + memory search (1k-5k) + tool definitions (2k-10k) compete for context. Need explicit budget allocation from day one.
-- v1.0 data migration: Existing sessions and preferences must work from new workspace location without data loss. Backward compatibility required.
+- ~~v1.0 data migration: Existing sessions and preferences must work from new workspace location without data loss. Backward compatibility required.~~ **RESOLVED in 05-02**: Migration implemented with copy strategy (preserves backups) and idempotent marker file.
 
 **Phase 7 (Semantic Memory Search):**
 - Memory contradiction accumulation: Vector search doesn't understand temporal relationships. "User prefers coffee" vs "User stopped drinking coffee" need conflict resolution with recency weighting.
@@ -82,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-12 - Phase 5 Plan 01 execution
-Stopped at: Completed 05-01-PLAN.md (Workspace Identity Foundation)
+Last session: 2026-02-12 - Phase 5 Plan 02 execution
+Stopped at: Completed 05-02-PLAN.md (Workspace Integration & v1.0 Migration)
 Resume file: None
