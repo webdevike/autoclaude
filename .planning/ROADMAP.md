@@ -64,8 +64,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — WorkspaceManager + WorkspaceGit foundation (SOUL.md loading, workspace init, git audit trail)
-- [ ] 05-02-PLAN.md — v1.0 data migration + agent integration (wire SOUL.md into system prompt, CLI startup)
+- [x] 05-01-PLAN.md — WorkspaceManager + WorkspaceGit foundation (SOUL.md loading, workspace init, git audit trail)
+- [x] 05-02-PLAN.md — v1.0 data migration + agent integration (wire SOUL.md into system prompt, CLI startup)
 
 #### Phase 6: Memory Persistence
 **Goal**: File-based memory storage with MEMORY.md and daily logs
@@ -140,7 +140,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Agent Core & Extensions | v1.0 | 3/3 | Complete | 2026-02-06 |
 | 3. Preferences & Configuration | v1.0 | 3/3 | Complete | 2026-02-06 |
 | 4. Cron Execution | v1.0 | 2/2 | Complete | 2026-02-06 |
-| 5. Workspace & Identity Foundation | v2.0 | 0/2 | Not started | - |
+| 5. Workspace & Identity Foundation | v2.0 | 2/2 | Complete | 2026-02-12 |
 | 6. Memory Persistence | v2.0 | 0/TBD | Not started | - |
 | 7. Semantic Memory Search | v2.0 | 0/TBD | Not started | - |
 | 8. Tool Registry & HTTP API | v2.0 | 0/TBD | Not started | - |
