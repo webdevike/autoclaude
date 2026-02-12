@@ -61,11 +61,11 @@ Plans:
   3. User can edit SOUL.md directly; agent reads it but never writes without explicit confirmation
   4. Existing v1.0 session logs and preferences work from new workspace location without data loss
   5. Git tracks all SOUL.md changes with timestamps for audit trail
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md — WorkspaceManager + WorkspaceGit foundation (SOUL.md loading, workspace init, git audit trail)
+- [ ] 05-02-PLAN.md — v1.0 data migration + agent integration (wire SOUL.md into system prompt, CLI startup)
 
 #### Phase 6: Memory Persistence
 **Goal**: File-based memory storage with MEMORY.md and daily logs
