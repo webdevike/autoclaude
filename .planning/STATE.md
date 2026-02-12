@@ -2,50 +2,35 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-06)
+See: .planning/PROJECT.md (updated 2026-02-12)
 
-**Core value:** A single Telegram interface that intelligently routes between fast responses and deep work
-**Current focus:** v1.1 — Cron Execution
+**Core value:** A unified AI assistant that remembers context across sessions and surfaces
+**Current focus:** v2.0 — Agent Architecture (memory, identity, shared tools)
 
 ## Current Position
 
-Milestone: v1.0 Pi-Mono Migration — COMPLETE
-Status: Ready for next milestone
-Last activity: 2026-02-06 — v1.0 shipped, archived to milestones/
+Milestone: v2.0 Agent Architecture — Not started
+Status: Defining requirements
+Last activity: 2026-02-12 — Milestone v2.0 started
 
-Progress: [██████████] 100% (v1.0)
-
-## Performance Metrics
-
-**v1.0 Velocity:**
-- Total plans completed: 11
-- Average duration: 3.5 minutes
-- Total execution time: 0.65 hours (39 min)
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-foundation | 3/3 | 10 min | 3.3 min |
-| 02-integrations | 5/5 | 11 min | 2.2 min |
-| 03-intelligence | 2/2 | 8 min | 4.0 min |
-| 04-autonomy | 1/1 | 10 min | 10.0 min |
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
 ### Decisions
-
-Full decision log in PROJECT.md Key Decisions table.
 
 Key patterns established in v1.0:
 - Confirmation flow for all config changes
 - Atomic writes with TypeBox validation
 - Extension API for integrations
 - Best-effort git commits for audit trail
+- Claude Code SDK as default agent (provider: "claude-code")
 
 ### Tech Debt (from v1.0)
 
 - CLI uses old @jarvis/integration-* packages alongside @jarvis/extensions/*
+- Tools defined separately per surface (MCP bridge for text, llm.tool() for voice)
+- v1.0 docs say cron is a stub but it's fully implemented — stale docs
 
 ### Blockers/Concerns
 
@@ -53,6 +38,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-06 21:15 UTC
-Stopped at: v1.0 milestone complete, ready for v1.1
+Last session: 2026-02-12
+Stopped at: Milestone v2.0 initialized, defining requirements
 Resume file: None
