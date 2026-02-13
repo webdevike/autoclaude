@@ -38,6 +38,10 @@ const projectRoot = resolve(__dirname, "..", "..", "..");
 dotenv.config({ path: resolve(projectRoot, ".env") });
 dotenv.config({ path: resolve(__dirname, "..", ".env.local") });
 
+// ---- Gateway API config ----
+
+const GATEWAY_API_URL = process.env.GATEWAY_API_URL || "http://127.0.0.1:3457";
+
 // ---- Initialize Jarvis integrations ----
 
 let jarvisToolCtx: llm.ToolContext = {};
@@ -82,6 +86,21 @@ If the user asks about emails, use gmail tools.
 If the user asks about notes or documents, use notion tools.
 If the user asks about tasks or issues, use linear tools.`;
 
+// ---- Gateway API client ----
+
+async function routeTextToGateway(text: string, sender: string): Promise<{ text: string; toolsUsed: string[] }> {
+  const res = await fetch(`${GATEWAY_API_URL}/api/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sender, text }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gateway API error (${res.status}): ${err}`);
+  }
+  return res.json();
+}
+
 // ---- Entry point ----
 
 export default defineAgent({
@@ -120,6 +139,71 @@ export default defineAgent({
 
     // Connect to the room
     await ctx.connect();
+
+    // Register data channel listener for text messages from iOS
+    ctx.room.on("dataReceived", async (payload: Uint8Array, participant) => {
+      // Only handle data from remote participants (iOS user), not from agent itself
+      if (!participant) return;
+
+      try {
+        const text = new TextDecoder().decode(payload);
+        const data = JSON.parse(text);
+
+        if (data.type !== "user_text" || !data.content) return;
+
+        console.log(`[livekit-agent] Text from ${participant.identity}: ${data.content.slice(0, 100)}`);
+
+        // Forward to gateway HTTP API
+        const response = await routeTextToGateway(data.content, participant.identity);
+
+        // Send text response back to iOS via data channel
+        const textResponse = JSON.stringify({
+          type: "agent_text_response",
+          content: response.text,
+          timestamp: Date.now(),
+        });
+        await ctx.room.localParticipant?.publishData(
+          new TextEncoder().encode(textResponse),
+          { reliable: true }
+        );
+
+        // Send tool usage list if any tools were used
+        if (response.toolsUsed.length > 0) {
+          const toolsMsg = JSON.stringify({
+            type: "function_tools_executed",
+            tools: response.toolsUsed.map(name => ({ name })),
+          });
+          await ctx.room.localParticipant?.publishData(
+            new TextEncoder().encode(toolsMsg),
+            { reliable: true }
+          );
+        }
+
+        console.log(`[livekit-agent] Text response sent (${response.text.length} chars, ${response.toolsUsed.length} tools)`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[livekit-agent] Text routing error: ${msg}`);
+
+        // Send error response back to iOS so it knows something went wrong
+        try {
+          const errorResponse = JSON.stringify({
+            type: "agent_text_response",
+            content: "Sorry, I encountered an error processing your message. Please try again.",
+            timestamp: Date.now(),
+            error: true,
+          });
+          await ctx.room.localParticipant?.publishData(
+            new TextEncoder().encode(errorResponse),
+            { reliable: true }
+          );
+        } catch {
+          // If we can't even send the error, just log it
+          console.error("[livekit-agent] Failed to send error response to iOS");
+        }
+      }
+    });
+
+    console.log("[livekit-agent] Data channel text handler registered");
 
     // Greet the user
     session.generateReply({
