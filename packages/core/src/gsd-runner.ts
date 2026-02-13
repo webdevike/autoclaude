@@ -252,8 +252,9 @@ export class GsdRunner {
       return;
     }
 
-    // Create project
+    // Create project directory and repo path
     const repoPath = resolve(WORKSPACE_ROOT, name);
+    if (!existsSync(repoPath)) mkdirSync(repoPath, { recursive: true });
     const projectId = randomUUID().slice(0, 8);
 
     const project: GsdProject = {

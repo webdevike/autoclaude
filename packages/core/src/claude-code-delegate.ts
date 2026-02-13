@@ -50,7 +50,7 @@ export async function runClaudeCode(
   } = config;
 
   console.log(
-    `[claude-code] Starting SDK query (resume=${sessionId ?? "none"})`,
+    `[claude-code] Starting SDK query (cwd=${cwd ?? "default"}, resume=${sessionId ?? "none"})`,
   );
 
   const options: Parameters<typeof query>[0]["options"] = {
