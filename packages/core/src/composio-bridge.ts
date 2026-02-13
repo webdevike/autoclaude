@@ -1,5 +1,5 @@
 /**
- * Composio Bridge — provides a remote MCP server URL via Composio's Tool Router.
+ * Composio Bridge — provides a remote MCP server config via Composio's Tool Router.
  *
  * Uses composio.create(entityId) to get a session with an MCP endpoint.
  * The Claude Code SDK connects to this MCP URL directly — no manual
@@ -11,10 +11,16 @@
 
 import { Composio } from "@composio/core";
 
-const ENTITY_ID = "jarvis";
+const ENTITY_ID = "default";
+
+export interface ComposioMcpConfig {
+  type: "http";
+  url: string;
+  headers?: Record<string, string>;
+}
 
 let composioInstance: Composio | null = null;
-let cachedMcpUrl: string | null = null;
+let cachedMcpConfig: ComposioMcpConfig | null = null;
 
 /**
  * Get or create the Composio client singleton.
@@ -31,21 +37,26 @@ function getComposio(): Composio {
 }
 
 /**
- * Get the Composio Tool Router MCP URL.
+ * Get the Composio Tool Router MCP config.
  *
- * Creates a session for the entity and returns the MCP endpoint URL
- * that can be passed directly to the Claude Code SDK as a remote MCP server.
+ * Creates a session for the entity and returns the full MCP config
+ * (type, url, headers) that can be passed directly to the Claude Code SDK
+ * as a remote MCP server.
  */
-export async function getComposioMcpUrl(): Promise<string | null> {
-  if (cachedMcpUrl) return cachedMcpUrl;
+export async function getComposioMcpConfig(): Promise<ComposioMcpConfig | null> {
+  if (cachedMcpConfig) return cachedMcpConfig;
 
   const composio = getComposio();
 
   try {
     const session = await composio.create(ENTITY_ID);
-    cachedMcpUrl = session.mcp.url;
+    cachedMcpConfig = {
+      type: session.mcp.type as "http",
+      url: session.mcp.url,
+      headers: session.mcp.headers,
+    };
     console.log(`[composio-bridge] Tool Router MCP URL ready for entity "${ENTITY_ID}"`);
-    return cachedMcpUrl;
+    return cachedMcpConfig;
   } catch (err) {
     console.error(
       `[composio-bridge] Failed to create session: ${err instanceof Error ? err.message : err}`,
@@ -58,6 +69,6 @@ export async function getComposioMcpUrl(): Promise<string | null> {
  * Invalidate the cached session (used by /tools command to refresh).
  */
 export function invalidateComposioCache(): void {
-  cachedMcpUrl = null;
+  cachedMcpConfig = null;
   composioInstance = null;
 }

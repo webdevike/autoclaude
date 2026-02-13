@@ -19,7 +19,8 @@ export type { UserPreferences } from "./preferences.js";
 export { WorkspaceManager } from "./workspace.js";
 export { WorkspaceGit } from "./workspace-git.js";
 export { ConfigManager } from "./config-manager.js";
-export { getComposioMcpUrl, invalidateComposioCache } from "./composio-bridge.js";
+export { getComposioMcpConfig, invalidateComposioCache } from "./composio-bridge.js";
+export type { ComposioMcpConfig } from "./composio-bridge.js";
 export { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
 export type {
   AgentResponse,

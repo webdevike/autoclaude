@@ -14,7 +14,8 @@ import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
-import { getComposioMcpUrl, invalidateComposioCache } from "./composio-bridge.js";
+import { getComposioMcpConfig, invalidateComposioCache } from "./composio-bridge.js";
+import type { ComposioMcpConfig } from "./composio-bridge.js";
 import { WorkspaceManager } from "./workspace.js";
 import type { AutonomousRunner } from "./autonomous-runner.js";
 import type {
@@ -285,8 +286,8 @@ export class AgentOrchestrator {
   // Per-user model overrides (set via /opus, /haiku, /sonnet commands)
   private userModelOverrides: Map<string, string> = new Map();
 
-  // Composio Tool Router MCP URL
-  private composioMcpUrl: string | null = null;
+  // Composio Tool Router MCP config (type, url, headers)
+  private composioMcpConfig: ComposioMcpConfig | null = null;
 
   // Cached MCP server instances (reused across messages)
   private cachedMcpServer: ReturnType<typeof createJarvisMcpServer> | null = null;
@@ -340,25 +341,25 @@ export class AgentOrchestrator {
   }
 
 
-  /** Initialize Composio Tool Router MCP URL */
+  /** Initialize Composio Tool Router MCP config */
   async initializeComposio(): Promise<void> {
     try {
-      this.composioMcpUrl = await getComposioMcpUrl();
+      this.composioMcpConfig = await getComposioMcpConfig();
       // Invalidate cached MCP servers so they're rebuilt with Composio
       this.cachedMcpServer = null;
       this.cachedMcpServersMap = null;
-      if (this.composioMcpUrl) {
+      if (this.composioMcpConfig) {
         console.log(`[orchestrator] Composio Tool Router MCP ready`);
       }
     } catch (err) {
       console.warn(`[orchestrator] Composio init failed: ${err instanceof Error ? err.message : err}`);
-      this.composioMcpUrl = null;
+      this.composioMcpConfig = null;
     }
   }
 
-  /** Get the Composio MCP URL */
-  getComposioMcpUrl(): string | null {
-    return this.composioMcpUrl;
+  /** Get the Composio MCP config */
+  getComposioMcpConfig(): ComposioMcpConfig | null {
+    return this.composioMcpConfig;
   }
 
   /** Load .pi/skills SKILL.md files and cache as a combined string */
@@ -719,11 +720,8 @@ export class AgentOrchestrator {
       }
 
       // Composio Tool Router (remote HTTP MCP — handles all integrations)
-      if (this.composioMcpUrl) {
-        mcpServersMap["composio"] = {
-          type: "http",
-          url: this.composioMcpUrl,
-        };
+      if (this.composioMcpConfig) {
+        mcpServersMap["composio"] = this.composioMcpConfig;
       }
 
       this.cachedMcpServersMap = mcpServersMap;
@@ -741,12 +739,14 @@ export class AgentOrchestrator {
         )
       : [];
 
-    const allowedTools = [...baseAllowed, ...mcpToolNames];
+    // Auto-allow Composio MCP tools (Tool Router provides tools dynamically)
+    const composioAllowed = this.composioMcpConfig ? ["mcp__composio__*"] : [];
+    const allowedTools = [...baseAllowed, ...mcpToolNames, ...composioAllowed];
 
     // If tools whitelist is set, merge MCP tool names so they're visible
     const configTools = modeConfig.claudeCode?.tools;
-    const tools = configTools && mcpToolNames.length > 0
-      ? [...configTools, ...mcpToolNames]
+    const tools = configTools && (mcpToolNames.length > 0 || composioAllowed.length > 0)
+      ? [...configTools, ...mcpToolNames, ...composioAllowed]
       : configTools;
 
     const mcpServers = Object.keys(this.cachedMcpServersMap).length > 0
