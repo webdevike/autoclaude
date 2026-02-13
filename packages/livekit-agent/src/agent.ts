@@ -170,6 +170,52 @@ export default defineAgent({
       room: ctx.room,
     });
 
+    // Register voice tool execution forwarding
+    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, (event: voice.FunctionToolsExecutedEvent) => {
+      try {
+        // Pair function calls with their outputs
+        const pairs = voice.zipFunctionCallsAndOutputs(event);
+
+        // Build structured tool result objects
+        const tools = pairs.map(([functionCall, functionCallOutput]) => {
+          // Parse arguments safely
+          let parsedArgs: unknown;
+          try {
+            parsedArgs = JSON.parse(functionCall.args);
+          } catch {
+            parsedArgs = functionCall.args; // fallback to raw string
+          }
+
+          return {
+            name: functionCall.name,
+            arguments: parsedArgs,
+            result: functionCallOutput.output,
+            isError: functionCallOutput.isError,
+          };
+        });
+
+        // Forward to iOS via data channel
+        const message = JSON.stringify({
+          type: "function_tools_executed",
+          tools,
+        });
+
+        ctx.room.localParticipant?.publishData(
+          new TextEncoder().encode(message),
+          { reliable: true }
+        );
+
+        const toolNames = tools.map(t => t.name).join(", ");
+        console.log(`[livekit-agent] Voice tools forwarded to iOS: ${toolNames}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[livekit-agent] Voice tool forwarding error: ${msg}`);
+        // Don't crash the agent if data channel publish fails
+      }
+    });
+
+    console.log("[livekit-agent] Voice tool forwarding registered");
+
     // Connect to the room
     await ctx.connect();
 
