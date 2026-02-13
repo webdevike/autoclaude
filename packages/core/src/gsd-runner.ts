@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { runClaudeCode } from "./claude-code-delegate.js";
@@ -275,6 +275,7 @@ export class GsdRunner {
     this.saveState();
 
     await this.notify(channelName, chatId, `[gsd:${name}] Initializing project at ${repoPath}...`);
+    this.clearLog(project);
 
     try {
       const prompt = buildGsdPrompt("new-project", description || name, repoPath);
@@ -480,9 +481,14 @@ export class GsdRunner {
     userPrompt: string,
     maxTurns = MAX_TURNS_DEFAULT,
   ): Promise<string> {
+    const log = this.readLog(project);
+    const fullPrompt = log
+      ? `${systemPrompt}\n\n<previous_conversation>\n${log}</previous_conversation>`
+      : systemPrompt;
+
     const result = await runClaudeCode({
       prompt: userPrompt,
-      systemPrompt,
+      systemPrompt: fullPrompt,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       cwd: project.repoPath,
@@ -502,10 +508,17 @@ export class GsdRunner {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<void> {
-    // Initial run
+    // Inject conversation log for context continuity across fresh sessions
+    const log = this.readLog(project);
+    const fullPrompt = log
+      ? `${systemPrompt}\n\n<previous_conversation>\n${log}</previous_conversation>`
+      : systemPrompt;
+
+    this.appendLog(project, "user", userPrompt);
+
     const result = await runClaudeCode({
       prompt: userPrompt,
-      systemPrompt,
+      systemPrompt: fullPrompt,
       sessionId: project.sessionId,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
@@ -526,7 +539,7 @@ export class GsdRunner {
       return;
     }
 
-    // Send the response
+    this.appendLog(project, "assistant", text);
     await this.sendChunked(project.channelName, project.chatId, text);
 
     // Check if the output looks like it's asking a question
@@ -558,6 +571,8 @@ export class GsdRunner {
       return;
     }
 
+    this.appendLog(project, "user", userReply);
+
     project.status = project.currentOperation?.type === "init"
       ? "initializing"
       : project.currentOperation?.type === "discuss"
@@ -588,6 +603,7 @@ export class GsdRunner {
       return;
     }
 
+    this.appendLog(project, "assistant", text);
     await this.sendChunked(project.channelName, project.chatId, text);
 
     if (this.looksLikeQuestion(text)) {
@@ -834,6 +850,55 @@ export class GsdRunner {
     await this.notify(project.channelName, project.chatId, `[gsd:${project.name}] ${operation} failed: ${msg}`);
     this.setIdle(project);
   }
+
+  // ---------------------------------------------------------------------------
+  // Conversation log — persists Q&A across fresh sessions
+  // ---------------------------------------------------------------------------
+
+  private logPath(project: GsdProject): string {
+    return resolve(project.repoPath, ".planning", "gsd-conversation.md");
+  }
+
+  /** Append an exchange to the project's conversation log */
+  private appendLog(project: GsdProject, role: "user" | "assistant", text: string): void {
+    try {
+      const dir = resolve(project.repoPath, ".planning");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const timestamp = new Date().toISOString().slice(0, 16);
+      const entry = `### ${role} (${timestamp})\n${text.slice(0, 1000)}\n\n`;
+      appendFileSync(this.logPath(project), entry);
+    } catch {
+      // non-critical
+    }
+  }
+
+  /** Read the conversation log (last ~3000 chars to avoid bloat) */
+  private readLog(project: GsdProject): string {
+    try {
+      const path = this.logPath(project);
+      if (!existsSync(path)) return "";
+      const full = readFileSync(path, "utf-8");
+      if (full.length <= 3000) return full;
+      // Take the tail — most recent exchanges matter most
+      return "...(earlier conversation truncated)\n\n" + full.slice(-3000);
+    } catch {
+      return "";
+    }
+  }
+
+  /** Clear the conversation log (on init or when starting fresh) */
+  private clearLog(project: GsdProject): void {
+    try {
+      const path = this.logPath(project);
+      if (existsSync(path)) writeFileSync(path, "");
+    } catch {
+      // non-critical
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // State management
+  // ---------------------------------------------------------------------------
 
   private loadState(): GsdState {
     try {
