@@ -95,8 +95,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Data channel listener (user_text handler, HTTP API client, error handling)
-- [ ] 07-02-PLAN.md — Response forwarding (agent_text_response and function_tools_executed data channel messages)
+- [ ] 07-01-PLAN.md — Data channel listener + HTTP API routing + response forwarding (user_text handler, gateway POST, agent_text_response + function_tools_executed messages)
+- [ ] 07-02-PLAN.md — Gateway health check + resilient connectivity (startup health verification, retry logic, graceful degradation)
 
 #### Phase 8: Voice Tool Forwarding
 **Goal**: Voice tool results forwarded to iOS as structured JSON for tool cards
