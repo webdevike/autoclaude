@@ -17,26 +17,26 @@
 - [x] **IDEN-02**: SOUL.md defines personality, boundaries, communication style, and continuity notes
 - [x] **IDEN-03**: User can edit SOUL.md directly; agent reads it but does not write to it without explicit user confirmation
 
-### HTTP API
+### HTTP API (Phase 6 — Pending)
 
 - [ ] **API-01**: Gateway process exposes POST /api/message endpoint on localhost:3457
 - [ ] **API-02**: Endpoint accepts { sender, text, mode? } and returns { text, toolsUsed }
 - [ ] **API-03**: Endpoint routes through orchestrator (same code path as Telegram)
 - [ ] **API-04**: Endpoint collects tool_use events during execution and returns tool names in response
 
-### Text Routing
+### Text Routing (Phase 7 — Pending)
 
 - [ ] **TEXT-01**: LiveKit agent listens for `user_text` messages on data channel
 - [ ] **TEXT-02**: LiveKit agent forwards text messages to gateway HTTP API
 - [ ] **TEXT-03**: LiveKit agent sends text responses back via data channel as `agent_text_response`
 - [ ] **TEXT-04**: LiveKit agent sends tool usage via data channel as `function_tools_executed`
 
-### Voice Tool Forwarding
+### Voice Tool Forwarding (Phase 8 — Pending)
 
 - [ ] **VOICE-01**: LiveKit agent listens for `function_tools_executed` events from OpenAI Realtime session
 - [ ] **VOICE-02**: LiveKit agent forwards voice tool results to iOS via data channel as structured JSON
 
-### Integration
+### Integration (Phase 6 — Pending)
 
 - [ ] **INT-01**: CLI process starts HTTP API after gateway.start()
 - [ ] **INT-02**: Gateway package exports startHttpApi from http-api module
@@ -88,25 +88,28 @@
 | IDEN-01 | Phase 5 | Complete |
 | IDEN-02 | Phase 5 | Complete |
 | IDEN-03 | Phase 5 | Complete |
-| API-01 | — | Pending |
-| API-02 | — | Pending |
-| API-03 | — | Pending |
-| API-04 | — | Pending |
-| TEXT-01 | — | Pending |
-| TEXT-02 | — | Pending |
-| TEXT-03 | — | Pending |
-| TEXT-04 | — | Pending |
-| VOICE-01 | — | Pending |
-| VOICE-02 | — | Pending |
-| INT-01 | — | Pending |
-| INT-02 | — | Pending |
-| INT-03 | — | Pending |
+| API-01 | Phase 6 | Pending |
+| API-02 | Phase 6 | Pending |
+| API-03 | Phase 6 | Pending |
+| API-04 | Phase 6 | Pending |
+| INT-01 | Phase 6 | Pending |
+| INT-02 | Phase 6 | Pending |
+| INT-03 | Phase 6 | Pending |
+| TEXT-01 | Phase 7 | Pending |
+| TEXT-02 | Phase 7 | Pending |
+| TEXT-03 | Phase 7 | Pending |
+| TEXT-04 | Phase 7 | Pending |
+| VOICE-01 | Phase 8 | Pending |
+| VOICE-02 | Phase 8 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 19 total (6 complete, 13 new)
-- Mapped to phases: 6 (Phase 5)
-- Unmapped: 13 (awaiting roadmap)
+- Phase 5: 6 requirements (Complete)
+- Phase 6: 7 requirements (Pending)
+- Phase 7: 4 requirements (Pending)
+- Phase 8: 2 requirements (Pending)
+- Unmapped: 0 (100% coverage)
 
 ---
 *Requirements defined: 2026-02-12 (workspace/identity), 2026-02-13 (gateway unification)*
-*Last updated: 2026-02-13 after v2.0 scope pivot*
+*Last updated: 2026-02-13 after v2.0 roadmap creation*

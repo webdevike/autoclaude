@@ -2,17 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-12)
+See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** A unified AI assistant that remembers context across sessions and surfaces
-**Current focus:** LiveKit gateway unification — defining requirements
+**Current focus:** Phase 6 - HTTP API Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-13 — v2.0 scope pivoted to LiveKit gateway unification (phases 6-9 replaced)
+Phase: 6 of 8 (HTTP API Foundation)
+Plan: Ready to plan (0/2 plans)
+Status: Ready to plan
+Last activity: 2026-02-13 — v2.0 roadmap created (phases 6-8 replace old phases 6-9)
+
+Progress: [████████░░░░░░░░░░] 38% (13/34 total plans)
 
 ## Performance Metrics
 
@@ -42,13 +44,10 @@ Last activity: 2026-02-13 — v2.0 scope pivoted to LiveKit gateway unification 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting v2.0 work:
 
-- **OpenClaw-style workspace + memory**: File-based memory (MEMORY.md + daily logs), semantic search with vector + BM25 hybrid retrieval, identity persistence via SOUL.md
-- **HTTP tool invoke API**: Single tool endpoint accessible from all surfaces (Telegram, LiveKit, iOS app, CLI) with bearer token authentication
-- **Claude Code SDK as default agent**: Powerful tool use, streaming, session resumption - replaced pi-coding-agent in v1.0
-- **SOUL.md character limits** (Phase 5): Warning at 6000 chars (~1500 tokens), hard error at 12000 chars (~3000 tokens) to balance expressiveness with context budget
-- **Best-effort git operations** (Phase 5): Git failures log warnings but never throw errors - audit trail is valuable but not critical to agent operations
-- **v1.0 migration strategy** (Phase 5): Copy (not move) v1.0 data to workspace with idempotent marker file - preserves backups and runs safely on every startup
-- **SOUL.md injection** (Phase 5): Workspace prepends SOUL.md to system prompt for both Claude Code and Pi-AI agent paths - identity now drives every message
+- **Internal HTTP API for LK→gateway** (Phase 6): Lightweight Hono server on localhost:3457, reuses orchestrator code path (same as Telegram)
+- **OpenClaw-style workspace + memory**: SOUL.md identity shipped in Phase 5, memory (MEMORY.md + semantic search) deferred to future milestone
+- **Claude Code SDK as default agent**: Powerful tool use, streaming, session resumption
+- **SOUL.md injection** (Phase 5): Workspace prepends SOUL.md to system prompt for both Claude Code and Pi-AI agent paths
 
 Key patterns from v1.0:
 - Confirmation flow for all config changes
@@ -62,26 +61,26 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 5 (Workspace & Identity):**
-- SOUL.md security: Must prevent prompt injection attacks. Agent should NOT write to SOUL.md without explicit confirmation. Git integrity checks required.
-- Context window budget: SOUL.md (500-2k tokens) + memory search (1k-5k) + tool definitions (2k-10k) compete for context. Need explicit budget allocation from day one.
-- ~~v1.0 data migration: Existing sessions and preferences must work from new workspace location without data loss. Backward compatibility required.~~ **RESOLVED in 05-02**: Migration implemented with copy strategy (preserves backups) and idempotent marker file.
+**Phase 6 (HTTP API Foundation):**
+- HTTP API is localhost-only internal communication layer — no auth needed (gateway and LiveKit agent on same VPS)
+- Must collect tool_use events during orchestrator execution to return tool names in response
+- Data channel contracts need documentation (message types, JSON schemas) for iOS team
 
-**Phase 7 (Semantic Memory Search):**
-- Memory contradiction accumulation: Vector search doesn't understand temporal relationships. "User prefers coffee" vs "User stopped drinking coffee" need conflict resolution with recency weighting.
-- Embedding provider: Research recommends local model (Transformers.js + bge-small-en-v1.5) for privacy and zero API costs, but VPS srv1312265 resource capacity (RAM, CPU) not verified.
+**Future (Memory - deferred):**
+- Memory contradiction accumulation: Vector search doesn't understand temporal relationships
+- Embedding provider: Research recommends local model (Transformers.js + bge-small-en-v1.5) but VPS resource capacity not verified
 
-**Phase 8 (Tool API):**
-- HTTP authentication: Tool invoke endpoint needs auth from day one (API key minimum, JWT better). Anyone on Tailscale network could control agent without it.
-- Concurrent tool execution: Multiple surfaces invoking tools simultaneously creates race conditions in file writes and OAuth token refresh. Needs atomic writes and distributed locks.
+**Future (Tool Registry - deferred):**
+- HTTP authentication: If tool invoke endpoint exposed beyond localhost, needs auth from day one
+- Concurrent tool execution: Multiple surfaces invoking tools simultaneously creates race conditions
 
 ### Tech Debt (from v1.0)
 
 - CLI uses old @jarvis/integration-* packages alongside @jarvis/extensions/*
-- Tools defined separately per surface (MCP bridge for text, llm.tool() for voice) - Phase 8 will unify
+- Tools defined separately per surface (MCP bridge for text, llm.tool() for voice) - future registry will unify
 
 ## Session Continuity
 
-Last session: 2026-02-13 - v2.0 scope pivot, defining requirements
-Stopped at: New milestone initialization
+Last session: 2026-02-13 - v2.0 roadmap creation
+Stopped at: Roadmap complete, ready to plan Phase 6
 Resume file: None

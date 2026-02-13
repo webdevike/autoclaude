@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Pi-Mono Migration** - Phases 1-4 (shipped 2026-02-06)
-- 🚧 **v2.0 Agent Architecture** - Phases 5-9 (in progress)
+- 🚧 **v2.0 LiveKit Gateway Unification** - Phases 5-8 (in progress)
 
 ## Phases
 
@@ -47,9 +47,9 @@ Plans:
 
 </details>
 
-### 🚧 v2.0 Agent Architecture (In Progress)
+### 🚧 v2.0 LiveKit Gateway Unification (In Progress)
 
-**Milestone Goal:** Transform jarvis from Telegram-centric agent into OpenClaw-inspired multi-surface assistant with persistent searchable memory, soul/identity system, and shared HTTP tool API.
+**Milestone Goal:** Route iOS text messages through the gateway orchestrator so iOS gets the same tools, SOUL.md, session continuity, and modes as Telegram. Forward voice tool results to iOS as structured JSON for tool cards.
 
 #### Phase 5: Workspace & Identity Foundation
 **Goal**: Establish workspace structure with SOUL.md identity system and migrate v1.0 data
@@ -67,73 +67,54 @@ Plans:
 - [x] 05-01-PLAN.md — WorkspaceManager + WorkspaceGit foundation (SOUL.md loading, workspace init, git audit trail)
 - [x] 05-02-PLAN.md — v1.0 data migration + agent integration (wire SOUL.md into system prompt, CLI startup)
 
-#### Phase 6: Memory Persistence
-**Goal**: File-based memory storage with MEMORY.md and daily logs
+#### Phase 6: HTTP API Foundation
+**Goal**: Internal HTTP API exposing gateway orchestrator for LiveKit agent communication
 **Depends on**: Phase 5
-**Requirements**: MEM-01, MEM-02, MEM-03, MEM-08
+**Requirements**: API-01, API-02, API-03, API-04, INT-01, INT-02, INT-03
 **Success Criteria** (what must be TRUE):
-  1. Agent can write durable facts to MEMORY.md and they persist across restarts
-  2. Agent writes daily notes to memory/YYYY-MM-DD.md with today's activities
-  3. Agent loads today's and yesterday's daily logs at session start automatically
-  4. New memory files (MEMORY.md edits, new daily logs) are indexed for search automatically
+  1. Gateway process exposes POST /api/message endpoint on localhost:3457 accepting sender, text, and optional mode
+  2. Endpoint routes through orchestrator using same code path as Telegram (tools, SOUL.md, session continuity, modes all work)
+  3. Endpoint returns text response and list of tool names used during execution
+  4. HTTP API starts automatically when CLI starts gateway (no manual intervention required)
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Memory tools foundation (memoryAppend + memoryLog + workspace accessors)
-- [ ] 06-02-PLAN.md — MCP bridge registration + session-start loading + MemoryWatcher
+- [ ] 06-01-PLAN.md — HTTP API module (Hono server, /api/message endpoint, orchestrator routing)
+- [ ] 06-02-PLAN.md — CLI integration (export startHttpApi, wire into startup after gateway.start())
 
-#### Phase 7: Semantic Memory Search
-**Goal**: Hybrid vector + BM25 memory search with graceful degradation
+#### Phase 7: Text Message Routing
+**Goal**: LiveKit agent routes iOS text messages through gateway HTTP API
 **Depends on**: Phase 6
-**Requirements**: MEM-04, MEM-05, MEM-06, MEM-07
+**Requirements**: TEXT-01, TEXT-02, TEXT-03, TEXT-04
 **Success Criteria** (what must be TRUE):
-  1. Agent has memory_search tool that returns relevant snippets from MEMORY.md and daily logs by semantic query
-  2. Agent has memory_get tool that reads specific memory files by path with optional line range
-  3. Memory search uses hybrid vector + BM25 retrieval with configurable weights (default 70/30)
-  4. Memory search gracefully degrades to BM25-only if embedding provider unavailable (network down, quota exceeded)
-  5. Memory search handles contradictions with recency weighting (newer facts score higher than old ones)
-**Plans**: TBD
+  1. LiveKit agent listens for user_text messages on data channel from iOS app
+  2. LiveKit agent forwards text messages to gateway HTTP API at localhost:3457
+  3. LiveKit agent sends text responses back to iOS via data channel as agent_text_response messages
+  4. LiveKit agent sends tool usage list to iOS via data channel as function_tools_executed messages with tool names
+  5. iOS text messages receive same SOUL.md personality, orchestrator tools, and mode behavior as Telegram
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md — Data channel listener (user_text handler, HTTP API client, error handling)
+- [ ] 07-02-PLAN.md — Response forwarding (agent_text_response and function_tools_executed data channel messages)
 
-#### Phase 8: Tool Registry & HTTP API
-**Goal**: Canonical tool registry with HTTP invoke endpoint for multi-surface access
-**Depends on**: Phase 5
-**Requirements**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, API-01, API-02, API-03, API-04, API-05
+#### Phase 8: Voice Tool Forwarding
+**Goal**: Voice tool results forwarded to iOS as structured JSON for tool cards
+**Depends on**: Phase 6 (needs HTTP API concepts, independent of text routing)
+**Requirements**: VOICE-01, VOICE-02
 **Success Criteria** (what must be TRUE):
-  1. All tools defined in single canonical registry (one source of truth for schemas and execution)
-  2. Canonical registry auto-generates MCP bridge definitions for text agent and llm.tool() definitions for voice agent
-  3. Adding new tool requires editing one place; all surfaces (Telegram, LiveKit, iOS) pick it up automatically
-  4. HTTP endpoint POST /tools/invoke accepts tool name + arguments with bearer token auth and returns result
-  5. HTTP endpoint GET /tools lists available tools with schemas
-  6. jarvis-ios can call tools directly via HTTP API instead of only through voice agent
-  7. Tool execution handles concurrent requests safely (atomic file writes, no OAuth refresh races)
-**Plans**: TBD
+  1. LiveKit agent listens for function_tools_executed events from OpenAI Realtime session during voice interactions
+  2. LiveKit agent forwards voice tool results to iOS via data channel as structured JSON with tool name, arguments, and result
+  3. iOS receives tool cards for both text path (Phase 7) and voice path tools
+**Plans**: 1 plan
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
-- [ ] 08-03: TBD
-
-#### Phase 9: Tool Policies
-**Goal**: Mode-based tool policies enforced across all surfaces
-**Depends on**: Phase 8
-**Requirements**: POL-01, POL-02, POL-03
-**Success Criteria** (what must be TRUE):
-  1. Tools can be enabled/disabled per mode (personal vs work) via configuration
-  2. Tool policy configuration stored alongside mode configs in workspace
-  3. HTTP API respects tool policies; denied tools return 403 with clear error message
-**Plans**: TBD
-
-Plans:
-- [ ] 09-01: TBD
+- [ ] 08-01-PLAN.md — Voice tool event listener and data channel forwarding
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 6 → 7 → 8
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -142,7 +123,6 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 3. Preferences & Configuration | v1.0 | 3/3 | Complete | 2026-02-06 |
 | 4. Cron Execution | v1.0 | 2/2 | Complete | 2026-02-06 |
 | 5. Workspace & Identity Foundation | v2.0 | 2/2 | Complete | 2026-02-12 |
-| 6. Memory Persistence | v2.0 | 0/TBD | Not started | - |
-| 7. Semantic Memory Search | v2.0 | 0/TBD | Not started | - |
-| 8. Tool Registry & HTTP API | v2.0 | 0/TBD | Not started | - |
-| 9. Tool Policies | v2.0 | 0/TBD | Not started | - |
+| 6. HTTP API Foundation | v2.0 | 0/2 | Not started | - |
+| 7. Text Message Routing | v2.0 | 0/2 | Not started | - |
+| 8. Voice Tool Forwarding | v2.0 | 0/1 | Not started | - |
