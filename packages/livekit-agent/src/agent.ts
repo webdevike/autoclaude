@@ -88,6 +88,23 @@ If the user asks about tasks or issues, use linear tools.`;
 
 // ---- Gateway API client ----
 
+let gatewayAvailable = false;
+
+async function checkGatewayHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${GATEWAY_API_URL}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { status: string };
+      return data.status === "ok";
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function routeTextToGateway(text: string, sender: string): Promise<{ text: string; toolsUsed: string[] }> {
   const res = await fetch(`${GATEWAY_API_URL}/api/message`, {
     method: "POST",
@@ -110,6 +127,22 @@ export default defineAgent({
 
     // Load VAD model for voice activity detection
     proc.userData.vad = await silero.VAD.load();
+
+    // Start background gateway health check (non-blocking)
+    (async () => {
+      for (let i = 0; i < 10; i++) {
+        gatewayAvailable = await checkGatewayHealth();
+        if (gatewayAvailable) {
+          console.log("[livekit-agent] Gateway health check passed");
+          break;
+        }
+        console.log(`[livekit-agent] Gateway not ready, retrying in 5s (${i + 1}/10)...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+      if (!gatewayAvailable) {
+        console.warn("[livekit-agent] Gateway not available after retries — will check on first message");
+      }
+    })();
   },
 
   entry: async (ctx: JobContext) => {
@@ -140,6 +173,14 @@ export default defineAgent({
     // Connect to the room
     await ctx.connect();
 
+    // Check gateway availability
+    gatewayAvailable = await checkGatewayHealth();
+    if (gatewayAvailable) {
+      console.log("[livekit-agent] Gateway HTTP API is available — text routing active");
+    } else {
+      console.warn("[livekit-agent] Gateway HTTP API not reachable — text routing will retry on each message");
+    }
+
     // Register data channel listener for text messages from iOS
     ctx.room.on("dataReceived", async (payload: Uint8Array, participant) => {
       // Only handle data from remote participants (iOS user), not from agent itself
@@ -153,8 +194,31 @@ export default defineAgent({
 
         console.log(`[livekit-agent] Text from ${participant.identity}: ${data.content.slice(0, 100)}`);
 
+        // Check gateway availability if previously unavailable
+        if (!gatewayAvailable) {
+          gatewayAvailable = await checkGatewayHealth();
+          if (!gatewayAvailable) {
+            // Send "not available" message to iOS
+            const unavailableMsg = JSON.stringify({
+              type: "agent_text_response",
+              content: "Text processing is temporarily unavailable. Please try again in a moment.",
+              timestamp: Date.now(),
+              error: true,
+            });
+            await ctx.room.localParticipant?.publishData(
+              new TextEncoder().encode(unavailableMsg),
+              { reliable: true }
+            );
+            return;
+          }
+          console.log("[livekit-agent] Gateway HTTP API became available — text routing now active");
+        }
+
         // Forward to gateway HTTP API
         const response = await routeTextToGateway(data.content, participant.identity);
+
+        // Mark gateway as available after successful routing
+        gatewayAvailable = true;
 
         // Send text response back to iOS via data channel
         const textResponse = JSON.stringify({
@@ -183,6 +247,9 @@ export default defineAgent({
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         console.error(`[livekit-agent] Text routing error: ${msg}`);
+
+        // Mark gateway as unavailable so next message retries health check
+        gatewayAvailable = false;
 
         // Send error response back to iOS so it knows something went wrong
         try {
