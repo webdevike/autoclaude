@@ -106,7 +106,6 @@ export class TelegramChannel implements Channel {
     // Register bot commands so they appear in Telegram's autocomplete menu
     await this.api("setMyCommands", {
       commands: [
-        { command: "gsd", description: "GSD project lifecycle (init, plan, execute, verify)" },
         { command: "haiku", description: "Switch to Haiku (fast, default)" },
         { command: "sonnet", description: "Switch to Sonnet (balanced)" },
         { command: "opus", description: "Switch to Opus (smartest)" },
@@ -114,6 +113,7 @@ export class TelegramChannel implements Channel {
         { command: "new", description: "Start a fresh conversation" },
         { command: "usage", description: "Show token usage today" },
         { command: "mode", description: "Show or switch modes" },
+        { command: "tools", description: "Refresh Composio integrations" },
       ],
     }).catch((err: unknown) => {
       console.warn("[telegram] Failed to set bot commands:", err instanceof Error ? err.message : err);

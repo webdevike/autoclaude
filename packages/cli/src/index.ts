@@ -10,17 +10,12 @@ const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
   AutonomousRunner,
-  GsdRunner,
-  createIntegrations,
-  shutdownIntegrations,
   WorkspaceManager,
   WorkspaceGit,
 } from "@jarvis/core";
 import type { ModeConfig } from "@jarvis/core";
 import { Gateway, startHttpApi } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
-import { LinearIntegration } from "@jarvis/integration-linear";
-import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
 
 async function main(): Promise<void> {
@@ -72,20 +67,8 @@ async function main(): Promise<void> {
   // --- Initialize core ---
   const orchestrator = new AgentOrchestrator(configDir);
 
-  // --- Initialize integrations (shared registry used by all channels) ---
-  const registry = await createIntegrations([
-    LinearIntegration,
-    GmailIntegration,
-  ]);
-
-  for (const integration of registry.integrations) {
-    for (const tool of integration.tools) {
-      orchestrator.registerTool(tool);
-    }
-  }
-
-  // Pass initialized integrations to orchestrator for MCP bridge (Claude Code SDK)
-  orchestrator.setIntegrations(registry.integrations);
+  // --- Initialize Composio Tool Router ---
+  await orchestrator.initializeComposio();
 
   // --- Set up gateway ---
   const gateway = new Gateway(orchestrator, {
@@ -156,26 +139,13 @@ async function main(): Promise<void> {
   });
   orchestrator.setAutonomousRunner(runner);
 
-  // --- Set up GSD runner ---
-  const gsdRunner = new GsdRunner({
-    sendMessage: (channelName, recipient, text) => gateway.sendToChannel(channelName, recipient, text),
-    sendWithKeyboard: (channelName, recipient, text, keyboard) => gateway.sendWithKeyboard(channelName, recipient, text, keyboard),
-    editMessageRemoveKeyboard: (channelName, recipient, messageId, text) => gateway.editMessageRemoveKeyboard(channelName, recipient, messageId, text),
-  });
-  orchestrator.setGsdRunner(gsdRunner);
-
-  // Wire Telegram callback queries to the appropriate runner
+  // Wire Telegram callback queries to the autonomous runner
   const telegramChannel = gateway.getChannel("telegram");
   if (telegramChannel?.onCallbackQuery) {
     telegramChannel.onCallbackQuery(async (query) => {
-      // Route GSD callbacks to GSD runner, others to autonomous runner
-      if (query.data?.startsWith("gsd_")) {
-        await gsdRunner.handleCallbackQuery(query);
-      } else {
-        await runner.handleCallbackQuery(query);
-      }
+      await runner.handleCallbackQuery(query);
     });
-    console.log("[startup] Telegram callback queries wired to autonomous + GSD runners.");
+    console.log("[startup] Telegram callback queries wired to autonomous runner.");
   }
 
   console.log(`\nJarvis is running in "${defaultMode}" mode.`);
@@ -186,7 +156,6 @@ async function main(): Promise<void> {
     console.log("\nShutting down Jarvis...");
     scheduler.shutdown();
     await gateway.shutdown();
-    await shutdownIntegrations(registry);
     process.exit(0);
   };
 

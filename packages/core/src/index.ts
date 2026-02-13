@@ -1,9 +1,6 @@
 export { AgentOrchestrator } from "./agent.js";
 export { AutonomousRunner } from "./autonomous-runner.js";
 export type { AutonomousRunnerDeps } from "./autonomous-runner.js";
-export { GsdRunner } from "./gsd-runner.js";
-export type { GsdRunnerDeps } from "./gsd-runner.js";
-export type { GsdProject, GsdStatus, GsdOperation, GsdState } from "./gsd-types.js";
 export { createModel, completeLLM, streamLLM, parseModel } from "./llm.js";
 export {
   createPiSession,
@@ -22,8 +19,7 @@ export type { UserPreferences } from "./preferences.js";
 export { WorkspaceManager } from "./workspace.js";
 export { WorkspaceGit } from "./workspace-git.js";
 export { ConfigManager } from "./config-manager.js";
-export { createIntegrations, shutdownIntegrations } from "./integrations.js";
-export type { IntegrationRegistry } from "./integrations.js";
+export { getComposioMcpUrl, invalidateComposioCache } from "./composio-bridge.js";
 export { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
 export type {
   AgentResponse,
@@ -34,7 +30,6 @@ export type {
   CronJobConfig,
   DelegationRequest,
   InlineKeyboardMarkup,
-  Integration,
   Message,
   ModeConfig,
   ModelConfig,

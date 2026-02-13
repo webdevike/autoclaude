@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { resolve, dirname, join } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
 import {
   createPiSession,
@@ -15,13 +14,12 @@ import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
+import { getComposioMcpUrl, invalidateComposioCache } from "./composio-bridge.js";
 import { WorkspaceManager } from "./workspace.js";
 import type { AutonomousRunner } from "./autonomous-runner.js";
-import type { GsdRunner } from "./gsd-runner.js";
 import type {
   AgentResponse,
   AgentSession,
-  Integration,
   Message,
   ModeConfig,
   StatusUpdate,
@@ -29,18 +27,6 @@ import type {
   SessionEntry,
   StreamProgressEvent,
 } from "./types.js";
-
-// Import extensions
-import gmailExtension from "@jarvis/extensions/gmail/index.js";
-import exaExtension from "@jarvis/extensions/exa/index.js";
-import linearExtension from "@jarvis/extensions/linear/index.js";
-
-// Define extensions array
-const EXTENSIONS = [
-  gmailExtension,
-  exaExtension,
-  linearExtension,
-];
 
 // Cost per 1M tokens (input/output) in USD
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -299,8 +285,8 @@ export class AgentOrchestrator {
   // Per-user model overrides (set via /opus, /haiku, /sonnet commands)
   private userModelOverrides: Map<string, string> = new Map();
 
-  // Integrations for MCP bridge (set by CLI)
-  private integrations: Integration[] = [];
+  // Composio Tool Router MCP URL
+  private composioMcpUrl: string | null = null;
 
   // Cached MCP server instances (reused across messages)
   private cachedMcpServer: ReturnType<typeof createJarvisMcpServer> | null = null;
@@ -312,8 +298,6 @@ export class AgentOrchestrator {
   // Autonomous task runner (set by CLI)
   private autonomousRunner?: AutonomousRunner;
 
-  // GSD project lifecycle runner (set by CLI)
-  private gsdRunner?: GsdRunner;
 
   // Callbacks for live cron job management (set by CLI after scheduler is created)
   private cronCallbacks?: {
@@ -355,23 +339,26 @@ export class AgentOrchestrator {
     return this.autonomousRunner;
   }
 
-  /** Set GSD runner (called by CLI after gateway is ready) */
-  setGsdRunner(runner: GsdRunner): void {
-    this.gsdRunner = runner;
+
+  /** Initialize Composio Tool Router MCP URL */
+  async initializeComposio(): Promise<void> {
+    try {
+      this.composioMcpUrl = await getComposioMcpUrl();
+      // Invalidate cached MCP servers so they're rebuilt with Composio
+      this.cachedMcpServer = null;
+      this.cachedMcpServersMap = null;
+      if (this.composioMcpUrl) {
+        console.log(`[orchestrator] Composio Tool Router MCP ready`);
+      }
+    } catch (err) {
+      console.warn(`[orchestrator] Composio init failed: ${err instanceof Error ? err.message : err}`);
+      this.composioMcpUrl = null;
+    }
   }
 
-  /** Get GSD runner */
-  getGsdRunner(): GsdRunner | undefined {
-    return this.gsdRunner;
-  }
-
-  /** Set initialized integrations for MCP bridge (called by CLI) */
-  setIntegrations(integrations: Integration[]): void {
-    this.integrations = integrations;
-    // Invalidate cached MCP servers so they're rebuilt with new integrations
-    this.cachedMcpServer = null;
-    this.cachedMcpServersMap = null;
-    console.log(`[orchestrator] Registered ${integrations.length} integrations for MCP bridge`);
+  /** Get the Composio MCP URL */
+  getComposioMcpUrl(): string | null {
+    return this.composioMcpUrl;
   }
 
   /** Load .pi/skills SKILL.md files and cache as a combined string */
@@ -561,23 +548,8 @@ export class AgentOrchestrator {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[orchestrator] Claude Code failed:`, errorMsg);
-      // Pi-AI fallback disabled — Claude Code only
       return { text: `Sorry, I hit an error: ${errorMsg}` };
     }
-
-    // Fallback: Pi-AI smart agent (currently disabled — Claude Code only)
-    // To re-enable: remove the early return above and uncomment below
-    /*
-    onProgress?.({ type: "status", text: "Falling back to smart agent..." });
-
-    const history = sessionManager.loadSession(50);
-    const contextSummary = history
-      .slice(-10)
-      .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
-      .join("\n");
-
-    return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
-    */
   }
 
   /** Fallback: delegate work to a smart agent using Pi SDK */
@@ -665,7 +637,6 @@ export class AgentOrchestrator {
         tools,
         cwd,
         currentMode: modeConfig.mode,
-        extensions: EXTENSIONS,
       });
 
       const finalText = await promptWithStreaming(piSession, task, onProgress);
@@ -735,9 +706,10 @@ export class AgentOrchestrator {
     if (!this.cachedMcpServersMap) {
       const mcpServersMap: Record<string, any> = {};
 
-      if (this.integrations.length > 0 || this.cronCallbacks) {
+      // Jarvis autonomy tools (cron, config, preferences)
+      if (this.cronCallbacks) {
         this.cachedMcpServer = createJarvisMcpServer({
-          integrations: this.integrations,
+          composioTools: [],
           configManager: this.configManager,
           preferencesManager,
           cronCallbacks: this.cronCallbacks,
@@ -746,20 +718,12 @@ export class AgentOrchestrator {
         mcpServersMap[MCP_SERVER_NAME] = this.cachedMcpServer;
       }
 
-      // Add Notion MCP server (official open-source, stdio transport)
-      const notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
-      if (notionToken && modeConfig.integrations.includes("notion")) {
-        // Use locally-installed package instead of npx to avoid resolution overhead
-        const require = createRequire(import.meta.url);
-        const notionPkgPath = require.resolve("@notionhq/notion-mcp-server/package.json");
-        const notionBin = join(dirname(notionPkgPath), "bin", "cli.mjs");
-        mcpServersMap["notion"] = {
-          type: "stdio" as const,
-          command: "node",
-          args: [notionBin],
-          env: { NOTION_TOKEN: notionToken },
+      // Composio Tool Router (remote HTTP MCP — handles all integrations)
+      if (this.composioMcpUrl) {
+        mcpServersMap["composio"] = {
+          type: "http",
+          url: this.composioMcpUrl,
         };
-        console.log(`[orchestrator] Notion MCP server configured (local install)`);
       }
 
       this.cachedMcpServersMap = mcpServersMap;
@@ -772,36 +736,17 @@ export class AgentOrchestrator {
     const baseAllowed = modeConfig.claudeCode?.allowedTools ?? [];
     const mcpToolNames = mcpServer
       ? getJarvisToolNames(
-          this.integrations,
-          !!process.env.EXA_API_KEY,
+          [],
           !!preferencesManager,
         )
       : [];
 
-    // Notion MCP tool names (static list, always included if notion is in the map)
-    const notionMcpToolNames: string[] = [];
-    if (this.cachedMcpServersMap["notion"]) {
-      const notionTools = [
-        "notion-search", "notion-fetch", "notion-create-pages",
-        "notion-update-page", "notion-move-pages", "notion-duplicate-page",
-        "notion-create-database", "notion-update-data-source",
-        "notion-query-data-sources", "notion-query-database-view",
-        "notion-create-comment", "notion-get-comments",
-        "notion-get-teams", "notion-get-users", "notion-get-user",
-        "notion-get-self",
-      ];
-      for (const t of notionTools) {
-        notionMcpToolNames.push(`mcp__notion__${t}`);
-      }
-    }
-
-    const allMcpToolNames = [...mcpToolNames, ...notionMcpToolNames];
-    const allowedTools = [...baseAllowed, ...allMcpToolNames];
+    const allowedTools = [...baseAllowed, ...mcpToolNames];
 
     // If tools whitelist is set, merge MCP tool names so they're visible
     const configTools = modeConfig.claudeCode?.tools;
-    const tools = configTools && allMcpToolNames.length > 0
-      ? [...configTools, ...allMcpToolNames]
+    const tools = configTools && mcpToolNames.length > 0
+      ? [...configTools, ...mcpToolNames]
       : configTools;
 
     const mcpServers = Object.keys(this.cachedMcpServersMap).length > 0
@@ -973,6 +918,17 @@ export class AgentOrchestrator {
       lines.push(`\nTotal: $${totalCost.toFixed(4)}`);
 
       return { text: `Usage this month:\n${lines.join("\n")}` };
+    }
+
+    if (trimmed === "/tools" || trimmed === "/refresh") {
+      invalidateComposioCache();
+      // Re-fetch in background so next message has fresh session
+      this.initializeComposio().then(() => {
+        console.log("[command] Composio session refreshed");
+      }).catch((err) => {
+        console.warn("[command] Composio refresh failed:", err instanceof Error ? err.message : err);
+      });
+      return { text: `Refreshing Composio session... New integrations will be available momentarily.` };
     }
 
     if (trimmed === "/new" || trimmed === "/newsession" || trimmed === "/reset") {

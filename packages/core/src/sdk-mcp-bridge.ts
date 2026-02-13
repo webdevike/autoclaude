@@ -1,5 +1,5 @@
 /**
- * SDK MCP Bridge — exposes Integration tools + autonomy tools as an
+ * SDK MCP Bridge — exposes Composio tools + autonomy tools as an
  * in-process MCP server that the Claude Code SDK can call.
  *
  * Uses createSdkMcpServer() from the Agent SDK so tools appear as
@@ -8,7 +8,7 @@
 
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod/v4";
-import type { Integration, ToolDefinition, CronJobConfig } from "./types.js";
+import type { ToolDefinition, CronJobConfig } from "./types.js";
 import type { ConfigManager } from "./config-manager.js";
 import type { PreferencesManager } from "./preferences.js";
 import type { CronCallbacks } from "./tools/autonomy-tools.js";
@@ -19,7 +19,7 @@ export const MCP_SERVER_NAME = "jarvis-tools";
 /**
  * JSON-Schema property → Zod schema converter.
  *
- * Handles the flat schemas used by Integration tools:
+ * Handles the flat schemas used by ToolDefinition tools:
  * string, number, boolean with optional required arrays.
  */
 function jsonSchemaPropertyToZod(prop: Record<string, unknown>): z.ZodType {
@@ -106,7 +106,7 @@ function jsonSchemaToZodShape(
 /**
  * Wrap a ToolDefinition into an SdkMcpToolDefinition.
  */
-function wrapIntegrationTool(td: ToolDefinition) {
+function wrapToolDefinition(td: ToolDefinition) {
   const zodShape = jsonSchemaToZodShape(td.parameters);
   const objectKeys = new Set<string>();
   const arrayKeys = new Set<string>();
@@ -343,58 +343,10 @@ function buildAutonomyMcpTools(
   return tools;
 }
 
-// ---- Exa search tool ----
-
-function buildExaMcpTool() {
-  return tool(
-    "exa_search",
-    "Search the web using Exa. Returns high-quality results with content snippets.",
-    {
-      query: z.string(),
-      numResults: z.number().optional(),
-    },
-    async (args) => {
-      try {
-        const apiKey = process.env.EXA_API_KEY;
-        if (!apiKey) {
-          return {
-            content: [{ type: "text" as const, text: "Exa not configured. Set EXA_API_KEY." }],
-          };
-        }
-        const { Exa } = await import("exa-js");
-        const exa = new Exa(apiKey);
-        const numResults = Math.min(args.numResults || 10, 20);
-        const res = await exa.searchAndContents(args.query, {
-          numResults,
-          useAutoprompt: true,
-          text: true,
-        });
-
-        if (!res.results?.length) {
-          return { content: [{ type: "text" as const, text: "No results found." }] };
-        }
-
-        const results = res.results.map((r: any) => ({
-          title: r.title,
-          url: r.url,
-          text: r.text ? r.text.slice(0, 500) : undefined,
-        }));
-
-        return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-}
-
 // ---- Main entry point ----
 
 export interface CreateJarvisMcpServerOptions {
-  integrations: Integration[];
+  composioTools: ToolDefinition[];
   configManager: ConfigManager;
   preferencesManager?: PreferencesManager;
   cronCallbacks?: CronCallbacks;
@@ -413,12 +365,10 @@ export function createJarvisMcpServer(opts: CreateJarvisMcpServerOptions) {
 
   const verbose = opts.verbose ?? false;
 
-  // 1. Wrap all integration tools
-  for (const integration of opts.integrations) {
-    for (const td of integration.tools) {
-      mcpTools.push(wrapIntegrationTool(td));
-      if (verbose) console.log(`[jarvis-tools] Registered integration tool: ${td.name}`);
-    }
+  // 1. Wrap all Composio tools
+  for (const td of opts.composioTools) {
+    mcpTools.push(wrapToolDefinition(td));
+    if (verbose) console.log(`[jarvis-tools] Registered Composio tool: ${td.name}`);
   }
 
   // 2. Add autonomy tools (cron, config, preferences)
@@ -431,12 +381,6 @@ export function createJarvisMcpServer(opts: CreateJarvisMcpServerOptions) {
   for (const t of autonomyTools) {
     mcpTools.push(t);
     if (verbose) console.log(`[jarvis-tools] Registered autonomy tool: ${t.name}`);
-  }
-
-  // 3. Add Exa search
-  if (process.env.EXA_API_KEY) {
-    mcpTools.push(buildExaMcpTool());
-    if (verbose) console.log("[jarvis-tools] Registered exa_search tool");
   }
 
   console.log(`[jarvis-tools] MCP server created with ${mcpTools.length} tools`);
@@ -452,18 +396,15 @@ export function createJarvisMcpServer(opts: CreateJarvisMcpServerOptions) {
  * Returns names prefixed with `mcp__jarvis-tools__`.
  */
 export function getJarvisToolNames(
-  integrations: Integration[],
-  hasExa: boolean,
+  composioTools: ToolDefinition[],
   hasPreferences: boolean,
 ): string[] {
   const prefix = `mcp__${MCP_SERVER_NAME}__`;
   const names: string[] = [];
 
-  // Integration tools
-  for (const integration of integrations) {
-    for (const td of integration.tools) {
-      names.push(`${prefix}${td.name}`);
-    }
+  // Composio tools
+  for (const td of composioTools) {
+    names.push(`${prefix}${td.name}`);
   }
 
   // Autonomy tools (always present)
@@ -476,10 +417,6 @@ export function getJarvisToolNames(
 
   if (hasPreferences) {
     names.push(`${prefix}get_preference`, `${prefix}set_preference`);
-  }
-
-  if (hasExa) {
-    names.push(`${prefix}exa_search`);
   }
 
   return names;
