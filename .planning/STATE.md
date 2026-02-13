@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 6 of 8 (HTTP API Foundation)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-02-13 — Completed 06-01-PLAN.md (HTTP API module)
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-02-13 — Completed 06-02-PLAN.md (CLI integration)
 
-Progress: [████████░░░░░░░░░░] 41% (14/34 total plans)
+Progress: [████████░░░░░░░░░░] 44% (15/34 total plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14 (11 from v1.0, 3 from v2.0)
-- Average duration: 2.4 minutes (v2.0 only)
+- Total plans completed: 15 (11 from v1.0, 4 from v2.0)
+- Average duration: 2.2 minutes (v2.0 only)
 - v1.0 execution time: ~2 days (2026-02-05 → 2026-02-06)
-- v2.0 execution time: 7.2 minutes total (2026-02-12 to 2026-02-13)
+- v2.0 execution time: 8.6 minutes total (2026-02-12 to 2026-02-13)
 
 **By Phase:**
 
@@ -33,10 +33,11 @@ Progress: [████████░░░░░░░░░░] 41% (14/34 to
 | 3. Preferences & Configuration | 3 | - | - |
 | 4. Cron Execution | 2 | - | - |
 | 5. Workspace & Identity | 2 | 5 min | 2.5 min |
-| 6. HTTP API Foundation | 1/2 | 2.2 min | 2.2 min |
+| 6. HTTP API Foundation | 2/2 | 3.6 min | 1.8 min |
 
 **Recent Trend:**
-- Phase 6 first plan: 2.2 min (HTTP API foundation with Hono)
+- Phase 6 plans: 2.2 min (HTTP API module), 1.4 min (CLI integration)
+- Phase 6 complete - HTTP API foundation operational
 - Consistent velocity maintained across v2.0 phases
 
 ## Accumulated Context
@@ -46,6 +47,7 @@ Progress: [████████░░░░░░░░░░] 41% (14/34 to
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting v2.0 work:
 
+- **HTTP API automatic startup** (Phase 6, Plan 2): HTTP API starts automatically in CLI after gateway.start(), uses same orchestrator instance as Telegram for identical behavior
 - **Internal HTTP API for LK→gateway** (Phase 6, Plan 1): Lightweight Hono server on localhost:3457, reuses orchestrator code path (same as Telegram). No auth needed - localhost-only binding provides sufficient isolation.
 - **Tool name collection via onProgress** (Phase 6, Plan 1): Collect tool names by filtering tool_use events in onProgress callback during orchestrator.handleMessage execution
 - **Hono framework choice** (Phase 6, Plan 1): Chosen for lightweight footprint (~12KB), modern API, excellent TypeScript support
@@ -65,10 +67,11 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 6 (HTTP API Foundation):**
+**Phase 6 (HTTP API Foundation) - COMPLETE:**
 - ✅ Plan 1 complete: HTTP API module created with Hono server on localhost:3457
+- ✅ Plan 2 complete: HTTP API wired into CLI startup sequence
 - ✅ Tool name collection implemented via onProgress callback
-- Data channel contracts need documentation (message types, JSON schemas) for iOS team (Plan 2)
+- Data channel contracts need documentation (message types, JSON schemas) for iOS team (future work)
 
 **Future (Memory - deferred):**
 - Memory contradiction accumulation: Vector search doesn't understand temporal relationships
@@ -85,12 +88,12 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13 - Phase 6 Plan 1 execution
-Stopped at: Completed 06-01-PLAN.md (HTTP API Foundation)
+Last session: 2026-02-13 - Phase 6 Plan 2 execution
+Stopped at: Completed 06-02-PLAN.md (CLI Integration) - Phase 6 complete
 Resume file: None
 
 **Session metrics:**
-- Duration: 2.2 minutes (132 seconds)
-- Tasks completed: 2/2
-- Commits: 2 (c5693de, bf5c728)
-- Files modified: 4 (created http-api.ts, updated package.json, index.ts, pnpm-lock.yaml)
+- Duration: 1.4 minutes (86 seconds)
+- Tasks completed: 1/1
+- Commits: 1 (412534e)
+- Files modified: 1 (packages/cli/src/index.ts)
