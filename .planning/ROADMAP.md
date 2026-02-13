@@ -76,10 +76,11 @@ Plans:
   2. Agent writes daily notes to memory/YYYY-MM-DD.md with today's activities
   3. Agent loads today's and yesterday's daily logs at session start automatically
   4. New memory files (MEMORY.md edits, new daily logs) are indexed for search automatically
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Memory tools foundation (memoryAppend + memoryLog + workspace accessors)
+- [ ] 06-02-PLAN.md — MCP bridge registration + session-start loading + MemoryWatcher
 
 #### Phase 7: Semantic Memory Search
 **Goal**: Hybrid vector + BM25 memory search with graceful degradation
