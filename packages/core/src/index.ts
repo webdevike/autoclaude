@@ -1,6 +1,9 @@
 export { AgentOrchestrator } from "./agent.js";
 export { AutonomousRunner } from "./autonomous-runner.js";
 export type { AutonomousRunnerDeps } from "./autonomous-runner.js";
+export { GsdRunner } from "./gsd-runner.js";
+export type { GsdRunnerDeps } from "./gsd-runner.js";
+export type { GsdProject, GsdStatus, GsdOperation, GsdState } from "./gsd-types.js";
 export { createModel, completeLLM, streamLLM, parseModel } from "./llm.js";
 export {
   createPiSession,

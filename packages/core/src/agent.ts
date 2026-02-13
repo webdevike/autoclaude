@@ -17,6 +17,7 @@ import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
 import { WorkspaceManager } from "./workspace.js";
 import type { AutonomousRunner } from "./autonomous-runner.js";
+import type { GsdRunner } from "./gsd-runner.js";
 import type {
   AgentResponse,
   AgentSession,
@@ -311,6 +312,9 @@ export class AgentOrchestrator {
   // Autonomous task runner (set by CLI)
   private autonomousRunner?: AutonomousRunner;
 
+  // GSD project lifecycle runner (set by CLI)
+  private gsdRunner?: GsdRunner;
+
   // Callbacks for live cron job management (set by CLI after scheduler is created)
   private cronCallbacks?: {
     onAdded: (config: import("./types.js").CronJobConfig) => void;
@@ -349,6 +353,16 @@ export class AgentOrchestrator {
   /** Get autonomous runner */
   getAutonomousRunner(): AutonomousRunner | undefined {
     return this.autonomousRunner;
+  }
+
+  /** Set GSD runner (called by CLI after gateway is ready) */
+  setGsdRunner(runner: GsdRunner): void {
+    this.gsdRunner = runner;
+  }
+
+  /** Get GSD runner */
+  getGsdRunner(): GsdRunner | undefined {
+    return this.gsdRunner;
   }
 
   /** Set initialized integrations for MCP bridge (called by CLI) */

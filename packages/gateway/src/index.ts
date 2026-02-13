@@ -101,6 +101,17 @@ export class Gateway {
       `[gateway] ${channel.name}/${message.sender}: ${message.text.slice(0, 100)}`,
     );
 
+    // --- GSD runner interception (check before autonomous runner) ---
+    const gsdRunner = this.orchestrator.getGsdRunner?.();
+
+    if (gsdRunner?.hasPendingQuestion(message.sender)) {
+      const handled = gsdRunner.handleUserReply(message.sender, message.text);
+      if (handled) {
+        console.log(`[gateway] Routed reply to GSD runner for ${message.sender}`);
+        return;
+      }
+    }
+
     // --- Autonomous runner interception ---
     const runner = this.orchestrator.getAutonomousRunner?.();
 
@@ -111,6 +122,12 @@ export class Gateway {
         console.log(`[gateway] Routed reply to autonomous runner for ${message.sender}`);
         return;
       }
+    }
+
+    // Handle /gsd commands
+    if (message.text.startsWith("/gsd")) {
+      await this.handleGsdCommand(message, channel);
+      return;
     }
 
     // Handle /auto commands
@@ -239,6 +256,29 @@ export class Gateway {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       console.error(`[gateway] Error processing message: ${errorMsg}`);
       await channel.send(message.sender, `Something went wrong: ${errorMsg}`);
+    }
+  }
+
+  /** Handle /gsd commands */
+  private async handleGsdCommand(msg: Message, channel: Channel): Promise<void> {
+    const gsdRunner = this.orchestrator.getGsdRunner?.();
+    if (!gsdRunner) {
+      await channel.send(msg.sender, "GSD runner not available.");
+      return;
+    }
+
+    const chatId = (msg.metadata?.chatId as string) ?? msg.channelMessageId ?? msg.sender;
+
+    const result = await gsdRunner.handleCommand(
+      msg.text,
+      msg.sender,
+      chatId,
+      channel.name,
+    );
+
+    // If result is null, the command is async (will notify via Telegram)
+    if (result !== null) {
+      await channel.send(msg.sender, result);
     }
   }
 

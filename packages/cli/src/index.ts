@@ -10,6 +10,7 @@ const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
   AutonomousRunner,
+  GsdRunner,
   createIntegrations,
   shutdownIntegrations,
   WorkspaceManager,
@@ -155,13 +156,26 @@ async function main(): Promise<void> {
   });
   orchestrator.setAutonomousRunner(runner);
 
-  // Wire Telegram callback queries to the runner
+  // --- Set up GSD runner ---
+  const gsdRunner = new GsdRunner({
+    sendMessage: (channelName, recipient, text) => gateway.sendToChannel(channelName, recipient, text),
+    sendWithKeyboard: (channelName, recipient, text, keyboard) => gateway.sendWithKeyboard(channelName, recipient, text, keyboard),
+    editMessageRemoveKeyboard: (channelName, recipient, messageId, text) => gateway.editMessageRemoveKeyboard(channelName, recipient, messageId, text),
+  });
+  orchestrator.setGsdRunner(gsdRunner);
+
+  // Wire Telegram callback queries to the appropriate runner
   const telegramChannel = gateway.getChannel("telegram");
   if (telegramChannel?.onCallbackQuery) {
     telegramChannel.onCallbackQuery(async (query) => {
-      await runner.handleCallbackQuery(query);
+      // Route GSD callbacks to GSD runner, others to autonomous runner
+      if (query.data?.startsWith("gsd_")) {
+        await gsdRunner.handleCallbackQuery(query);
+      } else {
+        await runner.handleCallbackQuery(query);
+      }
     });
-    console.log("[auto] Telegram callback queries wired to autonomous runner.");
+    console.log("[startup] Telegram callback queries wired to autonomous + GSD runners.");
   }
 
   console.log(`\nJarvis is running in "${defaultMode}" mode.`);
