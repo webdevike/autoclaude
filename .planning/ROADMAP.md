@@ -109,7 +109,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 08-01-PLAN.md — Voice tool event listener and data channel forwarding
+- [x] 08-01-PLAN.md — Voice tool event listener and data channel forwarding
 
 ## Progress
 
@@ -125,4 +125,4 @@ Phases execute in numeric order: 6 → 7 → 8
 | 5. Workspace & Identity Foundation | v2.0 | 2/2 | Complete | 2026-02-12 |
 | 6. HTTP API Foundation | v2.0 | 2/2 | Complete | 2026-02-13 |
 | 7. Text Message Routing | v2.0 | 2/2 | Complete | 2026-02-13 |
-| 8. Voice Tool Forwarding | v2.0 | 0/1 | Not started | - |
+| 8. Voice Tool Forwarding | v2.0 | 1/1 | Complete | 2026-02-13 |
