@@ -10,16 +10,12 @@ const projectRoot = resolve(__dirname, "..", "..", "..");
 import {
   AgentOrchestrator,
   AutonomousRunner,
-  createIntegrations,
-  shutdownIntegrations,
+  WorkspaceManager,
+  WorkspaceGit,
 } from "@jarvis/core";
 import type { ModeConfig } from "@jarvis/core";
-import { Gateway } from "@jarvis/gateway";
+import { Gateway, startHttpApi } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
-import { VoiceWebChannel } from "@jarvis/channel-voice-web";
-import { NotionIntegration } from "@jarvis/integration-notion";
-import { LinearIntegration } from "@jarvis/integration-linear";
-import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
 
 async function main(): Promise<void> {
@@ -52,24 +48,27 @@ async function main(): Promise<void> {
   if (process.env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
   if (process.env.OPENROUTER_API_KEY) process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+  // --- Initialize workspace ---
+  const workspace = new WorkspaceManager();
+  workspace.ensureWorkspace();
+
+  // Initialize git for audit trail
+  const workspaceGit = new WorkspaceGit(workspace.getWorkspaceDir());
+  await workspaceGit.initRepo();
+
+  // Commit initial SOUL.md if this is first run (git will handle if already committed)
+  await workspaceGit.commitFile("SOUL.md", "Initial SOUL.md from workspace setup");
+
+  // Migrate v1.0 data (idempotent, safe to run every startup)
+  workspace.migrateV1Data();
+
+  console.log(`[startup] Workspace ready at ${workspace.getWorkspaceDir()}`);
+
   // --- Initialize core ---
   const orchestrator = new AgentOrchestrator(configDir);
 
-  // --- Initialize integrations (shared registry used by all channels) ---
-  const registry = await createIntegrations([
-    NotionIntegration,
-    LinearIntegration,
-    GmailIntegration,
-  ]);
-
-  for (const integration of registry.integrations) {
-    for (const tool of integration.tools) {
-      orchestrator.registerTool(tool);
-    }
-  }
-
-  // Pass initialized integrations to orchestrator for MCP bridge (Claude Code SDK)
-  orchestrator.setIntegrations(registry.integrations);
+  // --- Initialize Composio Tool Router ---
+  await orchestrator.initializeComposio();
 
   // --- Set up gateway ---
   const gateway = new Gateway(orchestrator, {
@@ -85,20 +84,6 @@ async function main(): Promise<void> {
     );
   } else {
     console.warn("[channels] TELEGRAM_BOT_TOKEN not set, Telegram disabled.");
-  }
-
-  // --- Voice Web channel (OpenAI Realtime) ---
-  if (process.env.OPENAI_API_KEY) {
-    const activeModeConfig = modes.find(m => m.mode === defaultMode) ?? modes[0];
-    gateway.registerChannel(new VoiceWebChannel({
-      port: parseInt(process.env.VOICE_WEB_PORT ?? "3000", 10),
-      openaiApiKey: process.env.OPENAI_API_KEY,
-      systemPrompt: activeModeConfig.systemPrompt,
-      voice: process.env.VOICE_WEB_VOICE ?? "ash",
-      model: process.env.VOICE_WEB_MODEL ?? "gpt-4o-realtime-preview",
-    }));
-  } else {
-    console.warn("[channels] OPENAI_API_KEY not set, Voice Web disabled.");
   }
 
   // --- Start scheduler ---
@@ -143,6 +128,9 @@ async function main(): Promise<void> {
   // --- Start gateway ---
   await gateway.start();
 
+  // --- Start HTTP API for LiveKit agent communication ---
+  await startHttpApi({ orchestrator });
+
   // --- Set up autonomous runner ---
   const runner = new AutonomousRunner({
     sendMessage: (channelName, recipient, text) => gateway.sendToChannel(channelName, recipient, text),
@@ -151,13 +139,13 @@ async function main(): Promise<void> {
   });
   orchestrator.setAutonomousRunner(runner);
 
-  // Wire Telegram callback queries to the runner
+  // Wire Telegram callback queries to the autonomous runner
   const telegramChannel = gateway.getChannel("telegram");
   if (telegramChannel?.onCallbackQuery) {
     telegramChannel.onCallbackQuery(async (query) => {
       await runner.handleCallbackQuery(query);
     });
-    console.log("[auto] Telegram callback queries wired to autonomous runner.");
+    console.log("[startup] Telegram callback queries wired to autonomous runner.");
   }
 
   console.log(`\nJarvis is running in "${defaultMode}" mode.`);
@@ -168,7 +156,6 @@ async function main(): Promise<void> {
     console.log("\nShutting down Jarvis...");
     scheduler.shutdown();
     await gateway.shutdown();
-    await shutdownIntegrations(registry);
     process.exit(0);
   };
 

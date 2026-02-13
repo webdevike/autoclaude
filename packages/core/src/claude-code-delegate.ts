@@ -13,14 +13,18 @@ export interface ClaudeCodeConfig {
   prompt: string;
   systemPrompt?: string;
   sessionId?: string; // resume a previous conversation
+  model?: string; // Claude model ID (e.g. "claude-haiku-4-5-20251001")
   allowedTools?: string[];
+  disallowedTools?: string[]; // tools to block (e.g. ["AskUserQuestion"])
   tools?: string[]; // limit available built-in tools (skips MCP loading)
   permissionMode?: "default" | "bypassPermissions" | "acceptEdits";
   allowDangerouslySkipPermissions?: boolean;
+  settingSources?: ("user" | "project" | "local")[]; // which CLAUDE.md to load (default: [])
   cwd?: string;
   maxTurns?: number;
   mcpServers?: Record<string, McpServerConfig>;
   onProgress?: (event: StreamProgressEvent) => void;
+  stderr?: (data: string) => void; // stderr callback for SDK debug output
 }
 
 export interface ClaudeCodeResult {
@@ -40,24 +44,28 @@ export async function runClaudeCode(
     systemPrompt,
     sessionId,
     allowedTools,
+    disallowedTools,
     tools,
     permissionMode,
     cwd,
     maxTurns,
     mcpServers,
     onProgress,
+    stderr,
   } = config;
 
   console.log(
-    `[claude-code] Starting SDK query (resume=${sessionId ?? "none"})`,
+    `[claude-code] Starting SDK query (cwd=${cwd ?? "default"}, resume=${sessionId ?? "none"})`,
   );
 
   const options: Parameters<typeof query>[0]["options"] = {
     includePartialMessages: true,
-    settingSources: [] as const, // skip filesystem config for speed, no MCP
+    settingSources: config.settingSources ?? ([] as const),
     cwd: cwd || process.cwd(),
+    model: config.model,
     maxTurns,
     allowedTools,
+    disallowedTools,
     tools,
     permissionMode,
     allowDangerouslySkipPermissions: config.allowDangerouslySkipPermissions ?? false,
@@ -107,6 +115,12 @@ export async function runClaudeCode(
       }
     }
 
+    // Stderr from SDK
+    if ((message.type as string) === "stderr" && stderr) {
+      const ev = message as unknown as Record<string, unknown>;
+      if (typeof ev.data === "string") stderr(ev.data);
+    }
+
     // Final result
     if (message.type === "result") {
       const result = message as Record<string, unknown>;
@@ -115,6 +129,21 @@ export async function runClaudeCode(
       }
       if (typeof result.session_id === "string") {
         resultSessionId = result.session_id;
+      }
+
+      // Handle SDK errors (e.g. SDKResultError)
+      const errors = result.errors as Array<Record<string, unknown>> | undefined;
+      if (!result.result && errors && errors.length > 0) {
+        const subtype = result.subtype as string | undefined;
+        const errorMsgs = errors.map(e => e.message ?? e.error ?? JSON.stringify(e)).join("; ");
+        console.error(`[claude-code] SDK error (${subtype ?? "unknown"}): ${errorMsgs}`);
+
+        if (subtype === "error_max_turns" && accumulated) {
+          // Hit max turns — return accumulated text with a marker
+          resultText = accumulated + "\n\n[Reached max turns limit]";
+        } else {
+          throw new Error(`Claude SDK error (${subtype ?? "unknown"}): ${errorMsgs}`);
+        }
       }
     }
   }

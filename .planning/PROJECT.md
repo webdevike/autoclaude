@@ -2,29 +2,38 @@
 
 ## What This Is
 
-A self-hosted personal AI assistant accessible via Telegram, built on pi-mono's agent framework. A triage model (cheap/fast) handles quick interactions and delegates complex tasks — coding, research, multi-step workflows — to smarter models. Integrates with Gmail, Linear, Notion, and Exa web search, with a persistent preference system that lets the agent learn and configure itself over time.
+A self-hosted personal AI assistant with multiple surfaces — Telegram (text), LiveKit (voice), and an iOS app for real-time interaction. Uses Claude Code as the default agent with integrations for Gmail, Linear, Notion, and Exa. Features persistent memory, a programmable identity (soul.md), and a shared tool registry accessible from any client surface.
 
 ## Core Value
 
-A single Telegram interface that intelligently routes between fast responses and deep work, so I never have to context-switch between tools.
+A unified AI assistant that remembers context across sessions and surfaces — whether I'm typing on Telegram, talking via the iOS app, or using the CLI — with the same tools and identity everywhere.
 
-## Current State (v1.0 shipped)
+## Current Milestone: v2.0 Unify LiveKit Agent Through Gateway
+
+**Goal:** Route iOS text messages through the gateway orchestrator so iOS gets the same tools, SOUL.md, session continuity, and modes as Telegram. Forward voice tool results to iOS as structured JSON for tool cards.
+
+**Target features:**
+- Internal HTTP API on gateway process (localhost:3457) exposing orchestrator to LiveKit agent
+- LiveKit agent routes iOS text messages through gateway orchestrator (same path as Telegram)
+- Voice tool results forwarded to iOS via data channel as structured JSON
+- iOS gets SOUL.md personality, session continuity, all orchestrator tools, and mode switching for text path
+- Voice path unchanged (OpenAI Realtime with bridged integration tools)
+
+## Current State (v1.0 shipped, cron done)
 
 **Shipped:** 2026-02-06
-**Codebase:** ~2,500 lines TypeScript, pi-mono foundation
+**Codebase:** ~2,500 lines TypeScript
 **Deployed:** VPS srv1312265 via Tailscale
 
 **What works:**
-- Pi-ai unified LLM with 20+ providers, streaming, cost tracking
-- Pi-agent-core event-driven loop with TypeBox validation
+- Claude Code SDK as default agent with streaming
 - Gmail, Linear, Notion, Exa as hot-reloadable Extensions
-- Pi-coding-agent delegation in visible tmux sessions
+- Cron scheduler with full execution (sends prompts to orchestrator, replies to user)
 - Persistent preferences with confirmation flow
 - Dynamic mode switching via /mode command
 - Self-configuration tools (cron scheduling, config modification, shortcuts)
-
-**Known limitations:**
-- CronScheduler.executeJob() is a stub — jobs schedule but don't execute prompts
+- LiveKit voice agent (separate process) with tool bridging
+- iOS app connects via LiveKit rooms, receives tool results via data channel
 
 ## Requirements
 
@@ -43,46 +52,53 @@ A single Telegram interface that intelligently routes between fast responses and
 
 ### Active
 
-- [ ] Cron job execution (connect CronScheduler to AgentOrchestrator)
-- [ ] Proactive notifications (morning briefing, deadline reminders)
+- [ ] Internal HTTP API exposing orchestrator on localhost:3457
+- [ ] LiveKit agent routes iOS text messages through gateway orchestrator
+- [ ] Voice tool results forwarded to iOS as structured JSON via data channel
+- [ ] Text path provides SOUL.md, session continuity, all tools, and mode switching
 
 ### Out of Scope
 
 - Slack integration — no access to work Slack APIs
 - Work Gmail — can't configure OAuth on work email, personal Gmail only
-- MCP support — pi-mono philosophy: agent extends itself, no external tool registries
-- Mobile app — Telegram is the interface
-- Web UI — Telegram is the interface
 - Multi-user support — single user (Ike), single VPS
+- Multi-agent routing — single agent for now, multi-agent later
+- Web UI — Telegram + iOS app covers interfaces
 
 ## Context
 
-**Codebase:** Jarvis monorepo (`@jarvis/*` packages) with pi-mono foundation. Deployed on VPS (srv1312265 via Tailscale at 100.111.3.40).
+**Codebase:** Jarvis monorepo (`@jarvis/*` packages). Deployed on VPS (srv1312265 via Tailscale at 100.111.3.40).
 
-**Pi-mono foundation:** Using `@mariozechner/pi-ai` for LLM abstraction and `@mariozechner/pi-agent-core` for the agent loop. Pi-coding-agent as the smart coding delegate.
+**Agent runtime:** Claude Code SDK as primary agent. Tools exposed via MCP bridge (text) and llm.tool() wrappers (voice). Two systemd services: jarvis.service (gateway + Telegram + scheduler) and jarvis-agent.service (LiveKit voice agent).
+
+**Multi-surface architecture:** Telegram for text, LiveKit for voice, jarvis-ios (Expo/React Native) for mobile. iOS connects via LiveKit rooms and renders tool result cards. Tools currently defined separately per surface — need unification.
+
+**Reference architecture:** OpenClaw (open-source AI assistant) provides the model for workspace structure, soul.md identity, file-based persistent memory with semantic search, and HTTP tool invoke API.
 
 **Daily workflow:** Mix of quick checks ("check email", "what's on Linear") and delegated tasks ("write this code", "draft this email", "do a web search for xyz"). Work mode focuses on Linear + Notion + coding. Personal mode focuses on Gmail + web search + general assistance.
 
 ## Constraints
 
-- **Tech stack**: TypeScript, pi-mono packages, pnpm monorepo
+- **Tech stack**: TypeScript, pnpm monorepo
 - **Hosting**: Single VPS (srv1312265), Tailscale network
 - **LLM providers**: OpenRouter primary, Anthropic/OpenAI as fallbacks
-- **Interface**: Telegram only
-- **Runtime**: Node.js 22+, tmux required for process isolation
+- **Interfaces**: Telegram (text), LiveKit (voice), jarvis-ios (mobile)
+- **Runtime**: Node.js 22+
+- **Memory storage**: Local filesystem (no external DB for memory — SQLite ok for vector index)
+- **Single user**: Ike only, no multi-tenant concerns
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Use pi-mono (pi-ai + pi-agent-core) instead of custom LLM/agent code | Battle-tested, multi-provider, streaming, token tracking | ✓ Good — eliminates custom code, adds 20+ providers |
-| Pi-coding-agent as smart coding delegate | Already proven in OpenClaw, handles coding tasks well with 4 core tools | ✓ Good — visible tmux sessions, full tool access |
-| Exa for web search | Already configured on VPS for OpenClaw, includes image support | ✓ Good — working Extension |
-| Persistent preferences as JSON files | Simple, agent can read/write, version-controllable, no database needed | ✓ Good — atomic writes, TypeBox validation |
-| Confirmation flow for config changes | Prevents accidental agent modifications | ✓ Good — consistent pattern across tools |
+| Claude Code SDK as default agent | Powerful tool use, streaming, session resumption | ✓ Good — replaced pi-coding-agent |
+| Exa for web search | Already configured on VPS, includes image support | ✓ Good — working Extension |
+| Persistent preferences as JSON files | Simple, agent can read/write, no database needed | ✓ Good — atomic writes, TypeBox validation |
 | Extension API for integrations | Lifecycle management, hot-reload potential | ✓ Good — clean separation |
-| Keep Telegram as sole interface | Minimal surface area, accessible from any device, push notifications built in | ✓ Good — works well |
-| Gmail personal only | Can't OAuth work email, personal Gmail already configured with GCP project | — Accepted limitation |
+| Multiple surfaces (Telegram + LiveKit + iOS) | Access from any device, any modality | ✓ Good — works, needs tool unification |
+| Gmail personal only | Can't OAuth work email | — Accepted limitation |
+| OpenClaw-style workspace + memory | Proven pattern, file-based, semantic search, identity persistence | ✓ Good — workspace/SOUL.md shipped in Phase 5, memory deferred |
+| Internal HTTP API for LK→gateway | Lightweight Hono server, localhost only, reuses orchestrator | — v2.0 |
 
 ---
-*Last updated: 2026-02-06 after v1.0 milestone*
+*Last updated: 2026-02-13 after v2.0 scope pivot to LiveKit gateway unification*

@@ -14,11 +14,13 @@ import { runClaudeCode } from "./claude-code-delegate.js";
 import { PreferencesManager } from "./preferences.js";
 import { ConfigManager } from "./config-manager.js";
 import { createJarvisMcpServer, getJarvisToolNames, MCP_SERVER_NAME } from "./sdk-mcp-bridge.js";
+import { getComposioMcpConfig, invalidateComposioCache } from "./composio-bridge.js";
+import type { ComposioMcpConfig } from "./composio-bridge.js";
+import { WorkspaceManager } from "./workspace.js";
 import type { AutonomousRunner } from "./autonomous-runner.js";
 import type {
   AgentResponse,
   AgentSession,
-  Integration,
   Message,
   ModeConfig,
   StatusUpdate,
@@ -26,20 +28,6 @@ import type {
   SessionEntry,
   StreamProgressEvent,
 } from "./types.js";
-
-// Import extensions
-import gmailExtension from "@jarvis/extensions/gmail/index.js";
-import exaExtension from "@jarvis/extensions/exa/index.js";
-import linearExtension from "@jarvis/extensions/linear/index.js";
-import notionExtension from "@jarvis/extensions/notion/index.js";
-
-// Define extensions array
-const EXTENSIONS = [
-  gmailExtension,
-  exaExtension,
-  linearExtension,
-  notionExtension,
-];
 
 // Cost per 1M tokens (input/output) in USD
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -287,6 +275,7 @@ export class AgentOrchestrator {
   private preferencesManagers: Map<string, PreferencesManager> = new Map();
   private configDir: string;
   private configManager: ConfigManager;
+  private workspaceManager: WorkspaceManager;
 
   // Pi session components (shared across all calls)
   private authStorage = createAuthStorage();
@@ -294,14 +283,22 @@ export class AgentOrchestrator {
   // Claude Code session IDs per user (for conversation continuity)
   private claudeCodeSessions: Map<string, string> = new Map();
 
-  // Integrations for MCP bridge (set by CLI)
-  private integrations: Integration[] = [];
+  // Per-user model overrides (set via /opus, /haiku, /sonnet commands)
+  private userModelOverrides: Map<string, string> = new Map();
+
+  // Composio Tool Router MCP config (type, url, headers)
+  private composioMcpConfig: ComposioMcpConfig | null = null;
+
+  // Cached MCP server instances (reused across messages)
+  private cachedMcpServer: ReturnType<typeof createJarvisMcpServer> | null = null;
+  private cachedMcpServersMap: Record<string, any> | null = null;
 
   // Cached skill docs from .pi/skills/*/SKILL.md (loaded once)
   private skillDocsCache: string | null = null;
 
   // Autonomous task runner (set by CLI)
   private autonomousRunner?: AutonomousRunner;
+
 
   // Callbacks for live cron job management (set by CLI after scheduler is created)
   private cronCallbacks?: {
@@ -312,6 +309,12 @@ export class AgentOrchestrator {
   constructor(configDir?: string) {
     this.configDir = configDir || resolve(process.cwd(), "config");
     this.configManager = new ConfigManager(this.configDir);
+    this.workspaceManager = new WorkspaceManager();
+  }
+
+  /** Get workspace manager instance (for CLI access) */
+  getWorkspaceManager(): WorkspaceManager {
+    return this.workspaceManager;
   }
 
   /** Set callbacks for live cron job management (called by CLI after scheduler is ready) */
@@ -337,10 +340,26 @@ export class AgentOrchestrator {
     return this.autonomousRunner;
   }
 
-  /** Set initialized integrations for MCP bridge (called by CLI) */
-  setIntegrations(integrations: Integration[]): void {
-    this.integrations = integrations;
-    console.log(`[orchestrator] Registered ${integrations.length} integrations for MCP bridge`);
+
+  /** Initialize Composio Tool Router MCP config */
+  async initializeComposio(): Promise<void> {
+    try {
+      this.composioMcpConfig = await getComposioMcpConfig();
+      // Invalidate cached MCP servers so they're rebuilt with Composio
+      this.cachedMcpServer = null;
+      this.cachedMcpServersMap = null;
+      if (this.composioMcpConfig) {
+        console.log(`[orchestrator] Composio Tool Router MCP ready`);
+      }
+    } catch (err) {
+      console.warn(`[orchestrator] Composio init failed: ${err instanceof Error ? err.message : err}`);
+      this.composioMcpConfig = null;
+    }
+  }
+
+  /** Get the Composio MCP config */
+  getComposioMcpConfig(): ComposioMcpConfig | null {
+    return this.composioMcpConfig;
   }
 
   /** Load .pi/skills SKILL.md files and cache as a combined string */
@@ -530,23 +549,8 @@ export class AgentOrchestrator {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[orchestrator] Claude Code failed:`, errorMsg);
-      // Pi-AI fallback disabled — Claude Code only
       return { text: `Sorry, I hit an error: ${errorMsg}` };
     }
-
-    // Fallback: Pi-AI smart agent (currently disabled — Claude Code only)
-    // To re-enable: remove the early return above and uncomment below
-    /*
-    onProgress?.({ type: "status", text: "Falling back to smart agent..." });
-
-    const history = sessionManager.loadSession(50);
-    const contextSummary = history
-      .slice(-10)
-      .map(entry => `${entry.role}: ${entry.content.slice(0, 200)}`)
-      .join("\n");
-
-    return this.delegateToSmart(msg.text, modeConfig, msg.sender, contextSummary, onProgress);
-    */
   }
 
   /** Fallback: delegate work to a smart agent using Pi SDK */
@@ -602,8 +606,8 @@ export class AgentOrchestrator {
       }
     }
 
-    // Build system prompt with context and preferences
-    let smartSystemPrompt = modeConfig.systemPrompt;
+    // Build system prompt with SOUL.md, context, and preferences
+    let smartSystemPrompt = this.workspaceManager.buildSystemPrompt(modeConfig.systemPrompt);
     smartSystemPrompt += preferencesSection;
 
     if (contextSummary) {
@@ -634,7 +638,6 @@ export class AgentOrchestrator {
         tools,
         cwd,
         currentMode: modeConfig.mode,
-        extensions: EXTENSIONS,
       });
 
       const finalText = await promptWithStreaming(piSession, task, onProgress);
@@ -690,40 +693,64 @@ export class AgentOrchestrator {
     const cwd = modeConfig.cwd || process.cwd();
     const existingSessionId = this.claudeCodeSessions.get(msg.sender);
 
-    // Build system prompt with skill docs so Claude knows about integrations
-    const systemPrompt = modeConfig.systemPrompt + this.getSkillDocs();
+    // Resolve model: per-user override > config default > SDK default
+    const model = this.userModelOverrides.get(msg.sender) ?? modeConfig.claudeCode?.model;
 
-    // Build MCP server with integration + autonomy tools
+    // Build system prompt with SOUL.md + skill docs so Claude knows about integrations
+    const systemPrompt = this.workspaceManager.buildSystemPrompt(
+      modeConfig.systemPrompt + this.getSkillDocs()
+    );
+
+    // Build or reuse cached MCP servers
     const preferencesManager = this.getPreferencesManager(msg.sender);
-    const mcpServer = this.integrations.length > 0 || this.cronCallbacks
-      ? createJarvisMcpServer({
-          integrations: this.integrations,
+
+    if (!this.cachedMcpServersMap) {
+      const mcpServersMap: Record<string, any> = {};
+
+      // Jarvis autonomy tools (cron, config, preferences)
+      if (this.cronCallbacks) {
+        this.cachedMcpServer = createJarvisMcpServer({
+          composioTools: [],
           configManager: this.configManager,
           preferencesManager,
           cronCallbacks: this.cronCallbacks,
           currentMode: modeConfig.mode,
-        })
-      : undefined;
+        });
+        mcpServersMap[MCP_SERVER_NAME] = this.cachedMcpServer;
+      }
+
+      // Composio Tool Router (remote HTTP MCP — handles all integrations)
+      if (this.composioMcpConfig) {
+        mcpServersMap["composio"] = this.composioMcpConfig;
+      }
+
+      this.cachedMcpServersMap = mcpServersMap;
+      console.log(`[orchestrator] MCP servers map built and cached (${Object.keys(mcpServersMap).length} servers)`);
+    }
+
+    const mcpServer = this.cachedMcpServer;
 
     // Auto-allow all MCP tool names
     const baseAllowed = modeConfig.claudeCode?.allowedTools ?? [];
     const mcpToolNames = mcpServer
       ? getJarvisToolNames(
-          this.integrations,
-          !!process.env.EXA_API_KEY,
+          [],
           !!preferencesManager,
         )
       : [];
-    const allowedTools = [...baseAllowed, ...mcpToolNames];
+
+    // Auto-allow Composio MCP tools (Tool Router provides tools dynamically)
+    const composioAllowed = this.composioMcpConfig ? ["mcp__composio__*"] : [];
+    const allowedTools = [...baseAllowed, ...mcpToolNames, ...composioAllowed];
 
     // If tools whitelist is set, merge MCP tool names so they're visible
     const configTools = modeConfig.claudeCode?.tools;
-    const tools = configTools && mcpToolNames.length > 0
-      ? [...configTools, ...mcpToolNames]
+    const tools = configTools && (mcpToolNames.length > 0 || composioAllowed.length > 0)
+      ? [...configTools, ...mcpToolNames, ...composioAllowed]
       : configTools;
 
-    const mcpServers = mcpServer
-      ? { [MCP_SERVER_NAME]: mcpServer }
+    const mcpServers = Object.keys(this.cachedMcpServersMap).length > 0
+      ? this.cachedMcpServersMap
       : undefined;
 
     try {
@@ -731,9 +758,10 @@ export class AgentOrchestrator {
         prompt: msg.text,
         systemPrompt,
         sessionId: existingSessionId,
+        model,
         allowedTools,
         tools,
-        permissionMode: modeConfig.claudeCode?.permissionMode,
+        permissionMode: "bypassPermissions", // headless agent, no terminal to approve
         maxTurns: modeConfig.claudeCode?.maxTurns,
         cwd,
         mcpServers,
@@ -775,9 +803,10 @@ export class AgentOrchestrator {
           const result = await runClaudeCode({
             prompt: msg.text,
             systemPrompt,
+            model,
             allowedTools,
             tools,
-            permissionMode: modeConfig.claudeCode?.permissionMode,
+            permissionMode: "bypassPermissions", // headless agent, no terminal to approve
             maxTurns: modeConfig.claudeCode?.maxTurns,
             cwd,
             mcpServers,
@@ -832,34 +861,27 @@ export class AgentOrchestrator {
       return { text: result.message };
     }
 
-    if (trimmed === "/sessions") {
-      const sessions = this.getSessions();
-      if (sessions.length === 0) {
-        return { text: "No active agent sessions." };
-      }
-      const lines = sessions.map(
-        (s) =>
-          `[${s.id}] ${s.tier} | ${s.mode} | ${s.status} | ${s.lastUpdate ?? "no update"}`,
-      );
-      return { text: lines.join("\n") };
+    // Model switching commands
+    const MODEL_ALIASES: Record<string, string> = {
+      "/haiku": "claude-haiku-4-5-20251001",
+      "/sonnet": "claude-sonnet-4-5-20250929",
+      "/opus": "claude-opus-4-20250514",
+    };
+
+    if (trimmed in MODEL_ALIASES) {
+      const modelId = MODEL_ALIASES[trimmed];
+      const shortName = trimmed.slice(1); // "haiku", "sonnet", "opus"
+      this.userModelOverrides.set(userId, modelId);
+      // Clear session so new model takes effect
+      this.claudeCodeSessions.delete(userId);
+      return { text: `Switched to ${shortName}. Next message will use ${modelId}.` };
     }
 
-    if (trimmed.startsWith("/peek ")) {
-      const sessionId = trimmed.slice(6).trim();
-      const session = this.sessions.get(sessionId);
-      if (!session) {
-        return { text: `Session ${sessionId} not found.` };
-      }
-      return { text: `[${session.id}] ${session.tier} | ${session.mode} | ${session.status}\nLast update: ${session.lastUpdate ?? "no update"}` };
-    }
-
-    if (trimmed === "/peek") {
-      const sessions = this.getSessions();
-      if (sessions.length === 0) {
-        return { text: "No active sessions." };
-      }
-      const lines = sessions.map(s => `${s.id}: ${s.status}`);
-      return { text: `Active sessions:\n${lines.join("\n")}` };
+    if (trimmed === "/model") {
+      const current = this.userModelOverrides.get(userId)
+        ?? this.modes.get(this.activeMode)?.claudeCode?.model
+        ?? "default (Sonnet)";
+      return { text: `Current model: ${current}\n\nSwitch with /haiku, /sonnet, or /opus` };
     }
 
     if (trimmed === "/usage today" || trimmed === "/usage") {
@@ -896,6 +918,27 @@ export class AgentOrchestrator {
       lines.push(`\nTotal: $${totalCost.toFixed(4)}`);
 
       return { text: `Usage this month:\n${lines.join("\n")}` };
+    }
+
+    if (trimmed === "/tools" || trimmed === "/refresh") {
+      invalidateComposioCache();
+      // Re-fetch in background so next message has fresh session
+      this.initializeComposio().then(() => {
+        console.log("[command] Composio session refreshed");
+      }).catch((err) => {
+        console.warn("[command] Composio refresh failed:", err instanceof Error ? err.message : err);
+      });
+      return { text: `Refreshing Composio session... New integrations will be available momentarily.` };
+    }
+
+    if (trimmed === "/new" || trimmed === "/newsession" || trimmed === "/reset") {
+      const had = this.claudeCodeSessions.has(userId);
+      this.claudeCodeSessions.delete(userId);
+      return {
+        text: had
+          ? "Session cleared. Next message starts a fresh conversation."
+          : "No active session. Next message will start fresh.",
+      };
     }
 
     return null;

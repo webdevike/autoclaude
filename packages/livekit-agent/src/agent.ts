@@ -3,7 +3,7 @@
  *
  * Runs as a LiveKit Agent worker. When an iOS (or web) client joins a
  * LiveKit room, this agent joins the room and starts a voice conversation
- * powered by OpenAI Realtime, with access to all Jarvis tools.
+ * powered by OpenAI Realtime, with access to all Jarvis tools via Composio.
  */
 
 import {
@@ -13,7 +13,6 @@ import {
   cli,
   defineAgent,
   voice,
-  llm,
 } from "@livekit/agents";
 import * as openai from "@livekit/agents-plugin-openai";
 import * as silero from "@livekit/agents-plugin-silero";
@@ -25,12 +24,8 @@ import { resolve, dirname } from "node:path";
 import dotenv from "dotenv";
 import { AccessToken } from "livekit-server-sdk";
 
-import { createIntegrations } from "@jarvis/core";
-import { NotionIntegration } from "@jarvis/integration-notion";
-import { LinearIntegration } from "@jarvis/integration-linear";
-import { GmailIntegration } from "@jarvis/integration-gmail";
-
-import { bridgeIntegrationTools, buildExaTool } from "./tools.js";
+// Note: Composio tools are handled at the gateway level (via MCP Tool Router).
+// The livekit-agent delegates text to the gateway API and voice uses OpenAI Realtime directly.
 
 // Load env from project root
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,32 +33,9 @@ const projectRoot = resolve(__dirname, "..", "..", "..");
 dotenv.config({ path: resolve(projectRoot, ".env") });
 dotenv.config({ path: resolve(__dirname, "..", ".env.local") });
 
-// ---- Initialize Jarvis integrations ----
+// ---- Gateway API config ----
 
-let jarvisToolCtx: llm.ToolContext = {};
-
-async function initializeIntegrations(): Promise<void> {
-  const registry = await createIntegrations([
-    NotionIntegration,
-    LinearIntegration,
-    GmailIntegration,
-  ]);
-
-  // Bridge integration tools into ToolContext
-  jarvisToolCtx = bridgeIntegrationTools(registry.integrations);
-
-  // Add Exa search if configured
-  const exaTool = buildExaTool();
-  if (exaTool) {
-    jarvisToolCtx["exa_search"] = exaTool;
-    console.log("[livekit-agent] Added exa_search tool");
-  }
-
-  const toolNames = Object.keys(jarvisToolCtx);
-  console.log(
-    `[livekit-agent] ${toolNames.length} tools available: ${toolNames.join(", ")}`,
-  );
-}
+const GATEWAY_API_URL = process.env.GATEWAY_API_URL || "http://127.0.0.1:3457";
 
 // ---- System prompt ----
 
@@ -73,33 +45,79 @@ You have access to tools for:
 - Gmail: reading, listing, and sending emails
 - Notion: searching pages and reading content
 - Linear: managing issues and projects
+- GitHub: repository and issue management
+- Google Calendar: event management
 - Exa: searching the web for current information
 
 When the user asks you to do something that requires a tool, use it. Keep spoken responses concise — you're a voice assistant, not writing an essay. Use natural conversational language.
 
-If you don't know something and it might be findable online, use exa_search.
+If you don't know something and it might be findable online, use a search tool.
 If the user asks about emails, use gmail tools.
 If the user asks about notes or documents, use notion tools.
 If the user asks about tasks or issues, use linear tools.`;
+
+// ---- Gateway API client ----
+
+let gatewayAvailable = false;
+
+async function checkGatewayHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${GATEWAY_API_URL}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { status: string };
+      return data.status === "ok";
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function routeTextToGateway(text: string, sender: string): Promise<{ text: string; toolsUsed: string[] }> {
+  const res = await fetch(`${GATEWAY_API_URL}/api/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sender, text }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gateway API error (${res.status}): ${err}`);
+  }
+  return res.json();
+}
 
 // ---- Entry point ----
 
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
-    // Initialize integrations during prewarm so they're ready when rooms connect
-    await initializeIntegrations();
-
     // Load VAD model for voice activity detection
     proc.userData.vad = await silero.VAD.load();
+
+    // Start background gateway health check (non-blocking)
+    (async () => {
+      for (let i = 0; i < 10; i++) {
+        gatewayAvailable = await checkGatewayHealth();
+        if (gatewayAvailable) {
+          console.log("[livekit-agent] Gateway health check passed");
+          break;
+        }
+        console.log(`[livekit-agent] Gateway not ready, retrying in 5s (${i + 1}/10)...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+      if (!gatewayAvailable) {
+        console.warn("[livekit-agent] Gateway not available after retries — will check on first message");
+      }
+    })();
   },
 
   entry: async (ctx: JobContext) => {
     const vad = ctx.proc.userData.vad! as silero.VAD;
 
-    // Create the agent with tools passed via constructor
+    // Create the voice agent (tools are handled by gateway API for text messages)
     const agent = new voice.Agent({
       instructions: SYSTEM_PROMPT,
-      tools: jarvisToolCtx,
     });
 
     // Create agent session with OpenAI Realtime for low-latency voice
@@ -118,8 +136,153 @@ export default defineAgent({
       room: ctx.room,
     });
 
+    // Register voice tool execution forwarding
+    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, (event: voice.FunctionToolsExecutedEvent) => {
+      try {
+        // Pair function calls with their outputs
+        const pairs = voice.zipFunctionCallsAndOutputs(event);
+
+        // Build structured tool result objects
+        const tools = pairs.map(([functionCall, functionCallOutput]) => {
+          // Parse arguments safely
+          let parsedArgs: unknown;
+          try {
+            parsedArgs = JSON.parse(functionCall.args);
+          } catch {
+            parsedArgs = functionCall.args; // fallback to raw string
+          }
+
+          return {
+            name: functionCall.name,
+            arguments: parsedArgs,
+            result: functionCallOutput.output,
+            isError: functionCallOutput.isError,
+          };
+        });
+
+        // Forward to iOS via data channel
+        const message = JSON.stringify({
+          type: "function_tools_executed",
+          tools,
+        });
+
+        ctx.room.localParticipant?.publishData(
+          new TextEncoder().encode(message),
+          { reliable: true }
+        );
+
+        const toolNames = tools.map(t => t.name).join(", ");
+        console.log(`[livekit-agent] Voice tools forwarded to iOS: ${toolNames}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[livekit-agent] Voice tool forwarding error: ${msg}`);
+        // Don't crash the agent if data channel publish fails
+      }
+    });
+
+    console.log("[livekit-agent] Voice tool forwarding registered");
+
     // Connect to the room
     await ctx.connect();
+
+    // Check gateway availability
+    gatewayAvailable = await checkGatewayHealth();
+    if (gatewayAvailable) {
+      console.log("[livekit-agent] Gateway HTTP API is available — text routing active");
+    } else {
+      console.warn("[livekit-agent] Gateway HTTP API not reachable — text routing will retry on each message");
+    }
+
+    // Register data channel listener for text messages from iOS
+    ctx.room.on("dataReceived", async (payload: Uint8Array, participant) => {
+      // Only handle data from remote participants (iOS user), not from agent itself
+      if (!participant) return;
+
+      try {
+        const text = new TextDecoder().decode(payload);
+        const data = JSON.parse(text);
+
+        if (data.type !== "user_text" || !data.content) return;
+
+        console.log(`[livekit-agent] Text from ${participant.identity}: ${data.content.slice(0, 100)}`);
+
+        // Check gateway availability if previously unavailable
+        if (!gatewayAvailable) {
+          gatewayAvailable = await checkGatewayHealth();
+          if (!gatewayAvailable) {
+            // Send "not available" message to iOS
+            const unavailableMsg = JSON.stringify({
+              type: "agent_text_response",
+              content: "Text processing is temporarily unavailable. Please try again in a moment.",
+              timestamp: Date.now(),
+              error: true,
+            });
+            await ctx.room.localParticipant?.publishData(
+              new TextEncoder().encode(unavailableMsg),
+              { reliable: true }
+            );
+            return;
+          }
+          console.log("[livekit-agent] Gateway HTTP API became available — text routing now active");
+        }
+
+        // Forward to gateway HTTP API
+        const response = await routeTextToGateway(data.content, participant.identity);
+
+        // Mark gateway as available after successful routing
+        gatewayAvailable = true;
+
+        // Send text response back to iOS via data channel
+        const textResponse = JSON.stringify({
+          type: "agent_text_response",
+          content: response.text,
+          timestamp: Date.now(),
+        });
+        await ctx.room.localParticipant?.publishData(
+          new TextEncoder().encode(textResponse),
+          { reliable: true }
+        );
+
+        // Send tool usage list if any tools were used
+        if (response.toolsUsed.length > 0) {
+          const toolsMsg = JSON.stringify({
+            type: "function_tools_executed",
+            tools: response.toolsUsed.map(name => ({ name })),
+          });
+          await ctx.room.localParticipant?.publishData(
+            new TextEncoder().encode(toolsMsg),
+            { reliable: true }
+          );
+        }
+
+        console.log(`[livekit-agent] Text response sent (${response.text.length} chars, ${response.toolsUsed.length} tools)`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[livekit-agent] Text routing error: ${msg}`);
+
+        // Mark gateway as unavailable so next message retries health check
+        gatewayAvailable = false;
+
+        // Send error response back to iOS so it knows something went wrong
+        try {
+          const errorResponse = JSON.stringify({
+            type: "agent_text_response",
+            content: "Sorry, I encountered an error processing your message. Please try again.",
+            timestamp: Date.now(),
+            error: true,
+          });
+          await ctx.room.localParticipant?.publishData(
+            new TextEncoder().encode(errorResponse),
+            { reliable: true }
+          );
+        } catch {
+          // If we can't even send the error, just log it
+          console.error("[livekit-agent] Failed to send error response to iOS");
+        }
+      }
+    });
+
+    console.log("[livekit-agent] Data channel text handler registered");
 
     // Greet the user
     session.generateReply({

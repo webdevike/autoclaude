@@ -17,11 +17,6 @@
     "@jarvis/core": "workspace:*",
     "@jarvis/gateway": "workspace:*",
     "@jarvis/channel-telegram": "workspace:*",
-    "@jarvis/channel-voice-web": "workspace:*",
-
-    "@jarvis/integration-notion": "workspace:*",
-    "@jarvis/integration-linear": "workspace:*",
-    "@jarvis/integration-gmail": "workspace:*",
     "@jarvis/scheduler": "workspace:*",
     "@jarvis/status-reporter": "workspace:*",
     "dotenv": "^16.4.0"

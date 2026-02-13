@@ -1,665 +1,483 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** Self-hosted personal AI assistant migration to pi-mono
-**Researched:** 2026-02-05
-**Confidence:** HIGH (verified from official pi-mono sources, production reports, and OpenClaw case studies)
+**Domain:** Adding persistent memory, identity systems, and HTTP tool APIs to existing AI assistant
+**Researched:** 2026-02-12
+**Confidence:** MEDIUM-HIGH
 
----
+Research focused on integration pitfalls when adding these features to a working TypeScript agent (jarvis) built on Claude Code SDK, with existing JSONL sessions, preferences, and multi-surface architecture.
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, production failures, or major security issues.
+### Pitfall 1: Memory Contradiction Accumulation
 
-### Pitfall 1: Context Injection Without Visibility
+**What goes wrong:**
+Naive persistent memory systems drown in contradictions as reality changes over time. The system retrieves "User prefers coffee" alongside "User stopped drinking coffee" with no way to resolve which is current. Semantic search returns both, agent gets confused, and users lose trust as the assistant cites outdated facts.
 
-**What goes wrong:** Tools and frameworks inject content into the LLM context "behind your back" that isn't visible in the UI or logs. MCP servers alone consume 7-9% of your context window before you start working, often for tools never used in that session.
+**Why it happens:**
+Vector embeddings treat each memory independently—similarity search doesn't understand temporal relationships or supersession. Without explicit conflict resolution, old memories persist forever with equal weight to new ones.
 
-**Why it happens:** Teams adopt frameworks that prioritize convenience over observability. Pre-loading all available tools seems like good DX but creates invisible context bloat.
-
-**Consequences:**
-- Context exhaustion before task completion
-- Unable to debug why the agent "forgot" earlier instructions
-- Token costs 2-3x higher than expected
-- Performance degradation as context fills (NoLiMa study shows LLM performance drops significantly as context length increases)
-
-**Warning signs:**
-- Agent starts "forgetting" things in long conversations
-- Token usage spikes without visible correlation to conversation length
-- Models start performing worse mid-conversation despite no change in task complexity
-- Context window overflow errors (especially when hitting 70-80% capacity)
-
-**Prevention strategy:**
-- Adopt pi-mono's minimal tool philosophy (4 core tools: Read, Write, Edit, Bash)
-- Use progressive disclosure: load tools only when needed
-- Implement explicit context tracking showing what's in the system prompt
-- Monitor token usage per-component (system prompt, tools, conversation, RAG)
-- Trigger summarization at 70-80% context capacity
-
-**Which phase:** Phase 1 (Architecture) - build observability first, not as an afterthought
-
-**Sources:**
-- [What I learned building an opinionated and minimal coding agent](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/)
-- [Context Window Overflow in 2026](https://redis.io/blog/context-window-overflow/)
-
----
-
-### Pitfall 2: Self-Modifying Config Without Guardrails
-
-**What goes wrong:** Agents that edit their own configuration files can execute high-risk changes across entire infrastructure without human authorization gates, or corrupt config files with malformed JSON.
-
-**Why it happens:** Self-configuring agents seem like powerful automation but lack architectural constraints. Teams implement "edit any config" as a feature without considering blast radius.
-
-**Consequences:**
-- Agent breaks itself by corrupting JSON config (no validation)
-- Security credentials accidentally committed or leaked
-- Runaway changes applied to production without rollback capability
-- "Prompt decay" where the system prompt loses effectiveness over time
+**How to avoid:**
+- Implement memory conflict resolution before semantic search goes live
+- Track memory timestamps and recency weighting
+- Use graph memory or explicit relationship tracking to link superseding memories
+- Design memory consolidation to extract durable facts ("Acme Corp is in Room 105") and flag ephemeral state ("User is currently in Room 105")
+- Pre-compaction flush should include conflict detection prompts
 
 **Warning signs:**
-- Config files with syntax errors that prevent agent startup
-- Git history shows rapid, unreviewed config changes
-- Agent behavior changes unpredictably over time
-- Multiple failed attempts to parse config at startup
+- User corrections not reflected in subsequent retrievals
+- Agent citing information user explicitly said changed
+- Multiple contradictory memories retrieved for same query
+- Memory search returning "User likes X" and "User dislikes X" simultaneously
 
-**Prevention strategy:**
-- **Staged rollout:** Require human approval for all config changes
-- **JSON schema validation:** Use Pydantic or similar to validate before write
-- **Version control:** Auto-commit config changes with descriptive messages
-- **Rollback capability:** Keep last-known-good config, detect startup failures
-- **Audit trail:** Log what prompted each config change and the diff applied
-- **Scope limits:** Allow editing of preferences but not security-critical settings (API keys, allowed users, OAuth tokens)
-
-**Which phase:** Phase 2 (Self-Configuration) - must implement validation and rollback before enabling self-editing
-
-**Detection:** Monitor for JSON parse errors, validate on read, implement health checks
-
-**Sources:**
-- [Self-modifying AI agent configuration pitfalls](https://www.uscsinstitute.org/cybersecurity-insights/blog/what-is-ai-agent-security-plan-2026-threats-and-strategies-explained)
-- [OWASP ASI Top 10 2026](https://medium.com/@oracle_43885/owasps-ai-agent-security-top-10-agent-security-risks-2026-fc5c435e86eb)
+**Phase to address:**
+Phase 1 (Memory Foundation) must include conflict resolution strategy—not a later enhancement. OpenClaw-style pre-compaction flush helps but isn't sufficient alone.
 
 ---
 
-### Pitfall 3: Tmux Zombie Process Accumulation
+### Pitfall 2: SOUL.md Prompt Injection Backdoor
 
-**What goes wrong:** When tmux sessions are killed, sub-agents become orphaned (PPID=1) and continue consuming memory (~200MB each). After repeated restarts, memory exhaustion crashes the system.
+**What goes wrong:**
+SOUL.md is loaded into every system prompt, making it the highest-value target for attackers. Researchers demonstrated that attackers can modify SOUL.md to introduce long-term behavioral changes that persist across restarts. In the proof of concept, OpenClaw was instructed to create a scheduled task that periodically re-injects attacker-controlled logic into SOUL.md—a durable listener surviving even if the chat integration is removed.
 
-**Why it happens:** `tmux kill-session` only sends SIGHUP to the foreground process. Sub-agents that fork or reparent escape cleanup. No periodic cleanup process exists.
+**Why it happens:**
+SOUL.md must be writable by the agent for self-evolution features (personality drift, learning boundaries), creating a write surface. The agent treats SOUL.md content as trusted instructions, not user input. Jarvis already has cron scheduling and self-configuration tools—the exact capabilities exploited in the attack.
 
-**Consequences:**
-- VPS runs out of memory after days/weeks
-- Hundreds of zombie processes accumulate
-- No clear connection between "kill session" and memory growth
-- Requires manual intervention or VPS restart
+**How to avoid:**
+- NEVER allow agent to write SOUL.md directly—only through confirmed, audited operations
+- Implement SOUL.md integrity checks on load (checksum, signature, git commit verification)
+- Separate read-only identity (IDENTITY.md) from evolvable persona (PERSONA.md)
+- Log all SOUL.md modifications with git commits for audit trail (jarvis already does best-effort git)
+- Require explicit user confirmation for personality changes
+- Sandbox agent tool execution—no access to systemd, cron re-registration, or SOUL.md path
+- Consider SOUL.md immutable at runtime, editable only through CLI or manual process
 
 **Warning signs:**
-- Memory usage grows monotonically despite killing sessions
-- `ps aux` shows processes with PPID=1 matching agent names
-- Tmux session count doesn't match actual agent process count
-- System becomes unresponsive after extended uptime
+- Agent suggesting modifications to its own identity unprompted
+- SOUL.md git history showing changes not initiated by user
+- Agent requesting file system access to workspace root
+- Scheduled tasks writing to workspace files
+- Agent behavior drift not matching documented personality
 
-**Prevention strategy:**
-- **Defense-in-depth cleanup:**
-  - Layer 1: Kill by process group when killing tmux session
-  - Layer 2: Kill by TTY when killing tmux session
-  - Layer 3: Periodic cleanup job for orphaned processes (cronjob every 6 hours)
-- **Socket directory convention:** Place all tmux sockets under `CLAUDE_TMUX_SOCKET_DIR`
-- **Session naming:** Use predictable naming (e.g., `smart-${sessionId}`) to identify agent processes
-- **Monitoring:** Alert when orphan count exceeds threshold (>10 processes)
-
-**Which phase:** Phase 1 (Architecture) - implement before deploying to VPS
-
-**Detection:** `ps -eo ppid,pid,comm | grep "^1 " | grep -i agent`
-
-**Sources:**
-- [Gastown orphan process cleanup](https://github.com/steveyegge/gastown/issues/29)
-- [Tmux agent orchestration best practices](https://x.com/kieranklaassen/status/2007128073813336206)
+**Phase to address:**
+Phase 2 (Identity System) MUST address security before shipping. This is a known vulnerability with published exploits—not a theoretical risk.
 
 ---
 
-### Pitfall 4: Triage Model Blindly Routing All Complex Tasks
+### Pitfall 3: Context Window Budget Blowout
 
-**What goes wrong:** Two-tier delegation works in theory but fails in practice when the triage model over-delegates. Every task goes to the expensive smart tier, or simple tasks get routed to smart agents wasting time and money.
+**What goes wrong:**
+System prompt overhead balloons as you add SOUL.md (500-2k tokens), memory search results (1k-5k tokens), and tool definitions (2k-10k tokens). Production agents often carry extensive system prompts that repeat with every API call. Context allocation becomes a zero-sum game—more retrieved memories mean less conversation history. Without explicit budget allocation, you hit token limits mid-conversation or degrade performance as retrieval fills the window.
 
-**Why it happens:** Triage prompt is too conservative ("delegate anything complex") or lacks concrete examples. The cheap model lacks calibration for what truly needs delegation.
+**Why it happens:**
+Each component (soul, memory, tools, conversation) competes for context budget. Developers add features without tracking cumulative token usage. Claude Code SDK has built-in system prompt overhead—adding to it compounds the problem. Multi-million-token windows (2026) create false confidence that budget doesn't matter.
 
-**Consequences:**
-- Smart tier (expensive) handles 90%+ of requests
-- Cost is 10-15x higher than expected
-- No actual cost savings from two-tier architecture
-- Smart tier queue backs up with trivial tasks
+**How to avoid:**
+- Measure baseline context usage FIRST: Claude Code system prompt + tool definitions + typical conversation
+- Define explicit budget allocation: system (20%), soul (5%), memory (15%), tools (10%), conversation (50%)
+- Implement dynamic allocation—simple queries reduce memory budget, complex queries increase it
+- Truncate memory search results to fit budget, not just "top 10"
+- Use pre-compaction flush to maintain conversation continuity without bloating context
+- Monitor token usage per request in production
+- Cache tool definitions client-side if Claude Code SDK allows (verify in Phase 3)
 
 **Warning signs:**
-- OpenRouter/Anthropic bills 5-10x higher than projected
-- Delegation rate >70% (should be 30-50% for personal assistant)
-- Simple questions like "what's my schedule?" trigger smart agents
-- Users report slow responses for basic queries
+- Requests failing with token limit errors
+- Agent forgetting conversation context mid-session
+- Memory search returning too many results
+- System prompt approaching 10k+ tokens
+- Latency increasing as conversation progresses
+- Agent truncating responses unexpectedly
 
-**Prevention strategy:**
-- **Concrete examples in triage prompt:**
-  - "Handle yourself: greetings, status checks, simple factual Q&A, mode switching"
-  - "Delegate: multi-step tasks, code review, integration work, planning"
-- **Cost monitoring from day one:** Track delegation rate and cost per request tier
-- **Test dataset:** Build 50-example test set covering task spectrum, measure delegation accuracy
-- **Fallback rule:** If smart agent completes in <5 seconds, could have been handled by triage
-- **Calibration loop:** Weekly review of mis-routed tasks, update triage prompt
-
-**Which phase:** Phase 1 (Architecture) - critical to get right before deploying, then Phase 3 (Optimization) - tune based on production data
-
-**Detection:** Log every delegation decision with task description and tier chosen
-
-**Sources:**
-- [Triangle: Multi-LLM Agent Triage](https://www.microsoft.com/en-us/research/wp-content/uploads/2025/02/TRIANGLE_FSE25.pdf)
-- [Multi-Agent System Architecture Patterns](https://www.comet.com/site/blog/multi-agent-systems/)
+**Phase to address:**
+Phase 1 (Memory Foundation) must define and enforce budget from day one. Retrofitting budget limits after memory is live requires painful rewrites.
 
 ---
 
-### Pitfall 5: OAuth Token Refresh Failures in Production
+### Pitfall 4: Embedding Cost Spiral
 
-**What goes wrong:** Gmail OAuth tokens expire after 6 months of non-use, or Google revokes them when reaching the 100-token-per-client limit. Agent suddenly can't access Gmail without manual re-auth.
+**What goes wrong:**
+Naively embedding every message and memory operation causes costs to spiral. At scale, embedding generation becomes the primary cost driver—not LLM inference. Systems fail to batch embeddings, use rate-limited providers causing cascading bot failures, or embed duplicate content repeatedly.
 
-**Why it happens:** Google Cloud projects default to "Testing" mode (unreliable). Refresh tokens aren't automatically rotated. No monitoring for token expiration.
+**Why it happens:**
+Developers treat embeddings as "free background operation" without measuring cost. Not batching requests wastes API calls. Not caching embeddings for identical content (preferences, SOUL.md) causes redundant processing. Rate limits on embedding providers (OpenAI) cascade to agent failures.
 
-**Consequences:**
-- Silent failure: agent thinks it can access Gmail but gets 401 errors
-- User must manually re-authenticate mid-conversation
-- If at 100-token limit, must revoke old tokens before adding new ones
-- Gmail integration appears "broken" intermittently
+**How to avoid:**
+- Use cost-effective embedding models: text-embedding-3-small ($0.02/$0.01 per 1M tokens) not ada-002
+- Batch embedding generation whenever possible (50% cost savings with batch API for non-real-time)
+- Cache embeddings for static content (SOUL.md, preferences, archived memories)
+- Consider local embedding models for privacy and cost (sentence-transformers, ~1.1GB memory for BERT-base)
+- Quantize to FP8 for 50%+ throughput gain with >99% similarity retention
+- Only embed content destined for search—not ephemeral state
+- Implement embedding budget tracking separate from LLM budget
 
 **Warning signs:**
-- Gmail tool calls return 401 Unauthorized
-- Token hasn't been used in 4+ months
-- Google Cloud Console shows app in "Testing" mode
-- Error logs show "invalid_grant" or "token_expired"
+- Embedding API costs exceeding LLM costs
+- Rate limit errors from embedding provider
+- Identical content embedded multiple times
+- Every user message triggers embedding generation
+- No caching strategy for static content
+- Memory search latency dominated by embedding time
 
-**Prevention strategy:**
-- **Production mode:** Switch Google Cloud app to "Production" immediately (Testing mode is unreliable)
-- **Token rotation:** Implement automatic refresh token rotation (new refresh token with every access token refresh)
-- **Expiration monitoring:** Track last token use, alert at 5 months (before 6-month expiration)
-- **Token limit management:** Track token count, implement revocation for unused tokens
-- **Graceful degradation:** Detect 401, send user message "Gmail auth expired, please re-authenticate: [link]"
-- **Health checks:** Daily smoke test of each OAuth integration
-
-**Which phase:** Phase 2 (Integrations) - implement token management before deploying Gmail integration
-
-**Detection:** Monitor HTTP 401 responses from Google APIs, track days since last successful auth
-
-**Sources:**
-- [OAuth Gmail API integration pitfalls](https://developers.google.com/identity/protocols/oauth2)
-- [OpenClaw Gmail setup guide](https://superconscious.agency/blog/openclaw-connect-gmail/)
-- [Token refresh limits](https://dev.to/composiodev/4-best-ai-agent-authentication-platforms-to-consider-in-2026-32o8)
+**Phase to address:**
+Phase 1 (Memory Foundation) must define embedding strategy. Phase 4 (Optimization) should add caching, batching, local models.
 
 ---
 
-### Pitfall 6: Memory Poisoning Through Persistent Preferences
+### Pitfall 5: Vector Index Corruption Without Recovery
 
-**What goes wrong:** Persistent preferences stored in JSON become attack vectors. Malicious input (via prompt injection or compromised skill) writes harmful data to preferences. Agent loads poisoned preferences and executes unintended actions.
+**What goes wrong:**
+ChromaDB SQLite-backed index becomes corrupted during unclean shutdown, disk failure, or concurrent access. Recovery requires technical debugging—dropping UUID directories, reindexing from WAL. Users lose all memory, agent becomes amnesiac. Index corruption is often silent until retrieval returns garbage or crashes.
 
-**Why it happens:** Preferences are treated as "data" rather than "code," but LLMs blur this distinction. No input validation on what can be written to preferences.
+**Why it happens:**
+ChromaDB uses SQLite + binary HNSW index files (header.bin, link_lists.bin, data_level0.bin). Unclean shutdown during write leaves index inconsistent. Multiple processes accessing same collection concurrently violate SQLite locking. No automated corruption detection or recovery.
 
-**Consequences:**
-- Agent executes commands based on injected preferences
-- Preferences contain instructions to exfiltrate data to external servers
-- Subtle behavior changes that go unnoticed until damage is done
-- Audit trail only shows "agent loaded preferences" not "preferences were compromised"
+**How to avoid:**
+- Implement graceful shutdown handlers for jarvis gateway + agent services
+- Single-writer access pattern—only one process modifies collections
+- Regular index integrity checks on startup (query small dataset, catch errors)
+- Automated recovery: detect corruption → delete binary index → trigger reindex from WAL
+- Keep embeddings in separate durable store (JSONL, SQLite table) so reindex is fast
+- Regular backups of chroma.sqlite3 and collection data
+- Monitor ChromaDB logs for corruption indicators
+- Test recovery procedure in development (kill -9 during write)
 
 **Warning signs:**
-- Preferences file contains executable code or URLs
-- Unexpected commands in user preferences (shell commands, curl to unknown domains)
-- Preference changes without explicit user request
-- Preferences contain instructions rather than data ("always send summaries to [malicious URL]")
+- sqlite3.OperationalError on queries
+- Empty search results for known memories
+- ChromaDB process crashes on collection access
+- HNSW index files with mismatched timestamps
+- WAL file growing without being checkpointed
+- Permission errors on collection directories
 
-**Prevention strategy:**
-- **Schema validation:** JSON schema strictly defines allowed preference types (no URLs, no code blocks)
-- **Allowlist approach:** Only specific preference keys can be written
-- **Diff approval:** Show user diff before committing preference changes
-- **Sandboxed preferences:** Preferences can affect behavior but never trigger executable actions directly
-- **Audit logging:** Log what triggered each preference change (user message, session ID)
-- **Regular review:** Monthly audit of preferences for suspicious content
-
-**Which phase:** Phase 2 (Self-Configuration) - implement validation before enabling preference persistence
-
-**Detection:** Scan preferences for regex patterns (URLs, shell operators, code keywords)
-
-**Sources:**
-- [OWASP ASI: Memory Poisoning](https://www.kaspersky.com/blog/top-agentic-ai-risks-2026/55184/)
-- [Agent Memory Security](https://blog.dust.tt/agent-memory-building-persistence-into-ai-collaboration/)
+**Phase to address:**
+Phase 1 (Memory Foundation) must include recovery procedure and integrity checks. Don't wait for production corruption to discover you have no recovery path.
 
 ---
 
-## Moderate Pitfalls
+### Pitfall 6: HTTP Tool API Authentication Bypass
 
-Mistakes that cause delays, technical debt, or require significant rework.
+**What goes wrong:**
+Adding an HTTP tool invoke endpoint without proper authentication creates an open RPC endpoint. Anyone on the network can invoke tools as the agent—send emails, modify Linear issues, execute code, read files. Combined with jarvis's Tailscale deployment, this means anyone with Tailscale access can control the agent.
 
-### Pitfall 7: Over-Indexing on External Tool Standards (MCP)
+**Why it happens:**
+Developers focus on "make it work" before security. HTTP endpoint is easier to test without auth. Assuming network isolation (Tailscale) is sufficient security. Not realizing that tool execution has full agent privileges.
 
-**What goes wrong:** Teams adopt MCP (Model Context Protocol) thinking it's the "standard," but MCP constrains hot-reloading, forces tools into system context at startup, and limits agent's ability to extend itself.
-
-**Why it happens:** MCP sounds like a good architecture (standard protocol for tools). Framework-first thinking prioritizes "using the standard" over "solving the actual problem."
-
-**Consequences:**
-- Tools loaded at startup consume 7-9% of context for unused capabilities
-- Can't hot-reload tools without restarting entire agent
-- Agent can't write and test new tools in the same session
-- Forces static tool architecture instead of dynamic extension
+**How to avoid:**
+- Require authentication on tool invoke endpoint from day one—no "add later"
+- Options: API key (simple, rotate regularly), JWT (better, per-surface tokens), mTLS (best, certificate-based)
+- Separate auth for each surface (Telegram, iOS, CLI)—token compromise doesn't expose all surfaces
+- Rate limiting per client to prevent abuse
+- Audit log of tool invocations with surface identity
+- Principle of least privilege—tools declare required permissions, surfaces get subset
+- Never rely solely on network isolation for security
 
 **Warning signs:**
-- Must restart agent to add new tool
-- Context fills quickly with tool definitions you don't use
-- Agent says "I don't have that capability" when it could easily implement it
-- Development cycle requires code → restart → test loop
+- Tool endpoint accessible without credentials
+- Same API key used across all surfaces
+- No rate limiting on tool invocations
+- No audit trail of who invoked what
+- Tool permissions not scoped per surface
+- "Works without auth" in development
 
-**Prevention strategy:**
-- Follow pi-mono philosophy: agents extend themselves via code
-- Use MCP only for truly external services (not agent-writable tools)
-- Keep 4 core tools (Read, Write, Edit, Bash), implement everything else as skills/extensions
-- Hot-reload agent-written extensions without restart
-- Let agent write, test, iterate on tools in a single workflow
-
-**Which phase:** Phase 1 (Architecture) - decide tool philosophy before building
-
-**Sources:**
-- [Pi: The Minimal Agent Within OpenClaw](https://lucumr.pocoo.org/2026/1/31/pi/)
-- [What I learned building pi-coding-agent](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/)
+**Phase to address:**
+Phase 3 (Tool API) must implement authentication before exposing HTTP endpoint. Security is not a Phase 4 optimization.
 
 ---
 
-### Pitfall 8: API Rate Limiting Without Backoff/Retry
+### Pitfall 7: Concurrent Tool Execution State Corruption
 
-**What goes wrong:** Agent hammers Linear/Notion APIs without respecting rate limits. Gets 429 responses. Doesn't implement exponential backoff. User sees "API error" without understanding why.
+**What goes wrong:**
+Multiple surfaces (Telegram + iOS + CLI) invoking tools concurrently creates race conditions. Two surfaces read preferences simultaneously, both modify, both write—last write wins, one update lost. Concurrent Gmail tool calls cause OAuth token refresh race condition—both request new tokens, one expires, calls fail. Shared state (session files, preferences, memory) corrupts under concurrent writes.
 
-**Why it happens:** Teams build integrations without reading API docs. Assume APIs are unlimited. Don't test at scale.
+**Why it happens:**
+Tools assume single-threaded execution. File-based state (JSONL, JSON preferences) doesn't handle concurrent writes atomically. HTTP/2 allows concurrent requests that developers didn't design for. OAuth token refresh isn't idempotent or concurrency-safe.
 
-**Consequences:**
-- API credentials get rate-limited or temporarily banned
-- Users see cryptic "429 Too Many Requests" errors
-- Agent appears broken during high-usage periods
-- No graceful degradation
+**How to avoid:**
+- Use write-file-atomic npm package for all file writes (temp file + atomic rename)
+- Implement distributed locks for critical sections (Redis, file locks, or simple filesystem lock files)
+- Make tools idempotent where possible—same request yields same result
+- OAuth token refresh: implement refresh lock with check-lock-refresh pattern
+- Database-level concurrency controls if adding SQLite for preferences
+- Request queuing for tools that can't handle concurrency (serialize Gmail operations)
+- Test with concurrent requests in development—don't discover in production
 
 **Warning signs:**
-- HTTP 429 errors in logs
-- API calls fail intermittently
-- Errors cluster during active use periods
-- No delay between failed API calls and retries
+- Lost preference updates
+- OAuth errors about invalid tokens
+- Duplicate tool executions
+- File corruption in session logs
+- Race condition errors in logs
+- Inconsistent state after concurrent operations
+- EXDEV errors when temp file on different filesystem
 
-**Prevention strategy:**
-- **Read API docs first:** Notion (3 req/sec average), Linear (varies by plan)
-- **Exponential backoff:** 1s → 2s → 4s → 8s with jitter
-- **Rate limiting library:** Use bottleneck, p-limit, or similar
-- **Graceful error messages:** "Notion API rate limited, waiting 5 seconds..." instead of raw error
-- **Request batching:** Combine multiple operations where API supports it
-- **Caching:** Cache frequently accessed data (project list, workspace settings)
-
-**Which phase:** Phase 2 (Integrations) - implement before deploying each integration
-
-**Detection:** Monitor 429 responses, track retry attempts
-
-**Sources:**
-- [Notion API Rate Limits](https://developers.notion.com/reference/request-limits)
-- [API Rate Limiting 2026 Guide](https://www.levo.ai/resources/blogs/api-rate-limiting-guide-2026)
+**Phase to address:**
+Phase 3 (Tool API) must address concurrency before multiple surfaces share the endpoint. Test with parallel requests from day one.
 
 ---
 
-### Pitfall 9: Multi-Channel Context Fragmentation
+### Pitfall 8: JSONL Session Migration Data Loss
 
-**What goes wrong:** User starts conversation in Telegram, switches to WhatsApp, agent has no memory of previous context. Users frustrated: "I already told you this in Telegram!"
+**What goes wrong:**
+Migrating from v1.0 JSONL sessions to v2.0 workspace structure without backward compatibility causes history loss. Users lose context from previous conversations. Session resumption breaks. Preferences disappear. Agent becomes amnesiac about past interactions.
 
-**Why it happens:** Each channel maintains separate conversation history. No shared identity across channels. No context synchronization.
+**Why it happens:**
+New workspace structure (~/.jarvis/workspace/) uses different paths and formats than v1.0 sessions. Code assumes new format, doesn't check for legacy files. No migration script from JSONL to new memory structure. Developers test with clean workspace, don't discover migration issues until production upgrade.
 
-**Consequences:**
-- Poor user experience (have to repeat themselves)
-- Users stick to single channel, defeating multi-channel purpose
-- Agent appears "dumb" for forgetting
-- Duplicated effort across channels
+**How to avoid:**
+- Detect legacy session files on first v2.0 startup
+- Automated migration: JSONL sessions → MEMORY.md + daily logs
+- Keep JSONL sessions in parallel during migration window (dual write)
+- Preferences migration: ensure keys map correctly to new structure
+- Version detection in workspace (WORKSPACE_VERSION file)
+- Rollback support: v2.0 → v1.0 shouldn't lose data
+- Test migration with real v1.0 data, not just fresh installs
+- Document migration procedure for manual recovery if automated fails
 
 **Warning signs:**
-- Users explicitly say "as I mentioned in [other channel]..."
-- Same questions asked across different channels
-- Low usage of secondary channels
-- Support requests about "agent forgetting"
+- v2.0 startup doesn't see v1.0 preferences
+- Conversation history disappears after upgrade
+- Agent doesn't remember previous sessions
+- No migration log or status
+- Fresh workspace behavior on existing installation
+- Preferences reset to defaults
 
-**Prevention strategy:**
-- **Unified identity:** Map Telegram username → Gmail → unique user ID
-- **Shared conversation store:** Persist to database/file with user ID, not channel ID
-- **Context retrieval:** Load last N messages across all channels when responding
-- **Cross-channel references:** Agent mentions "based on our Telegram conversation..."
-- **Gateway pattern:** Clawdbot/Moltbot-style gateway that preserves identity
-
-**Which phase:** Phase 3 (Multi-Channel) - plan architecture in Phase 1, implement in Phase 3
-
-**Detection:** Track conversation topics per-user across channels
-
-**Sources:**
-- [Clawdbot: One Brain, Many Channels](https://medium.com/@imranmsa93/how-clawdbot-enables-one-brain-many-channels-ai-agents-across-whatsapp-slack-telegram-and-b49242261419)
-- [Moltbot Review](https://leaveit2ai.com/ai-tools/productivity/moltbot)
+**Phase to address:**
+Phase 1 (Memory Foundation) must include migration from v1.0 JSONL. Don't break working system.
 
 ---
 
-### Pitfall 10: Insufficient LLM Cost Monitoring
+### Pitfall 9: Memory Search Retrieving Wrong Context
 
-**What goes wrong:** Team deploys agent, costs spiral out of control. No per-user cost tracking. No budget alerts. Recursive loop burns through $500 in an hour.
+**What goes wrong:**
+Semantic search retrieves "similar" memories that are contextually wrong. User asks about "current project status" and gets memories from 3 projects ago. Agent cites outdated information confidently. Similarity-based retrieval doesn't understand recency, relevance, or context boundaries.
 
-**Why it happens:** Teams focus on functionality first, treat monitoring as "nice to have." Costs seem small in testing (few requests) but scale nonlinearly in production.
+**Why it happens:**
+Vector search optimizes for similarity, not relevance. Embeddings treat all memories equally—no recency bias, no project scope, no user correction tracking. Retrieval doesn't understand conversation context—queries embedded without surrounding conversation.
 
-**Consequences:**
-- Surprise $5,000 bill at end of month
-- Can't identify what's driving costs (model? user? task type?)
-- No data to optimize which tasks should use cheap vs expensive models
-- Project gets canceled due to unsustainable costs
+**How to avoid:**
+- Metadata filtering: tag memories with project, date, type, user-corrected flag
+- Recency weighting: boost recent memories in ranking
+- Hybrid search: BM25 keyword + vector similarity using Reciprocal Rank Fusion (RRF)
+- Query expansion: embed user query with conversation context, not just the question
+- User correction tracking: mark memories as superseded/outdated
+- Relevance feedback: track which memories lead to useful responses vs. ignored
+- Scoped retrieval: "current project" filter before semantic search
 
 **Warning signs:**
-- Monthly API bill 3x+ higher than expected
-- Can't explain why costs increased week-over-week
-- No per-user or per-task cost breakdown
-- Users running agents in infinite loops without detection
+- Agent citing information from wrong time period or project
+- User frequently correcting retrieved context
+- Memories from different domains mixed in results
+- Recency not reflected in search results
+- No way to scope search to specific categories
+- BM25 and vector scores on completely different scales (unbounded vs. [0,2])
 
-**Prevention strategy:**
-- **Track from day one:** Log every LLM call with cost, user, task type, tier
-- **Per-user budgets:** Alert when user exceeds $X/day or $Y/month
-- **Anomaly detection:** Flag when costs spike 2x+ vs rolling average
-- **Dashboard:** Real-time view of costs by tier, user, task type
-- **Caching:** Implement prompt caching (saves 90% on repeated context)
-- **Cost-aware routing:** Cheap model for triage, expensive for complex tasks only
-- **Budget for 1.5x:** Initial estimate will be wrong, plan for 50% overage
-
-**Which phase:** Phase 1 (Architecture) - build cost tracking into LLM client from start
-
-**Detection:** Daily cost review, anomaly detection for 2x+ spikes
-
-**Sources:**
-- [LLM Cost Monitoring Guide](https://langwatch.ai/blog/4-best-tools-for-monitoring-llm-agentapplications-in-2026)
-- [AI Agent Production Costs 2026](https://www.agentframeworkhub.com/blog/ai-agent-production-costs-2026)
-- [How to Cut LLM Costs by 90%](https://www.helicone.ai/blog/monitor-and-optimize-llm-costs)
+**Phase to address:**
+Phase 1 (Memory Foundation) needs metadata schema and filtering. Phase 2 (Identity) adds scoping. Phase 4 (Optimization) implements hybrid search.
 
 ---
 
-### Pitfall 11: No Evaluation/Testing Framework
+### Pitfall 10: Soul Personality Drift Without Tracking
 
-**What goes wrong:** Team ships changes without testing whether agent quality degraded. Subtle regressions go unnoticed until users complain. No way to compare "is this prompt better?"
+**What goes wrong:**
+SOUL.md evolves over time through small edits, gradually drifting from intended personality. Agent becomes inconsistent—different behavior in different sessions. No audit trail of personality changes. No way to revert to "known good" identity. Users can't trust agent behavior consistency.
 
-**Why it happens:** Building evals feels like overhead. LLM outputs are non-deterministic, so teams think "testing doesn't apply." Prioritize new features over quality gates.
+**Why it happens:**
+SOUL.md treated as mutable configuration, not versioned artifact. No change tracking or diff visibility. Incremental changes seem small but accumulate. Agent self-modification without user visibility. No baseline or testing for personality consistency.
 
-**Consequences:**
-- Prompt changes break existing functionality
-- No confidence when updating models or system prompts
-- "Debugging by vibes" - can't tell if changes help or hurt
-- Agent quality degrades over time (prompt decay)
+**How to avoid:**
+- Git commit every SOUL.md change with descriptive message (jarvis already does best-effort git)
+- Periodic SOUL.md snapshots with dates (SOUL-2026-02-12.md backups)
+- Drift detection: compare current SOUL.md to baseline, flag significant changes
+- User review of personality changes: show diff before applying
+- Rollback command: restore previous SOUL.md version
+- Personality testing: standard scenarios that should yield consistent responses
+- Separate stable identity (IDENTITY.md immutable) from evolvable persona (PERSONA.md tracked)
 
 **Warning signs:**
-- Changes deployed without testing
-- No test dataset of example conversations
-- Can't answer "did this prompt change improve delegation accuracy?"
-- Regressions discovered by users, not developers
+- Agent behavior inconsistent across sessions
+- SOUL.md modified without user knowledge
+- No git history or timestamps on identity changes
+- Can't explain why behavior changed
+- No way to revert to previous personality
+- Agent contradicting stated values or boundaries
 
-**Prevention strategy:**
-- **Build test dataset early:** 50-100 examples covering task spectrum (simple → complex)
-- **Eval metrics:** Delegation accuracy, task success rate, refusal rate, cost per task
-- **Regression testing:** Run evals before merging prompt/model changes
-- **Human review:** Sample 10 random conversations weekly
-- **LLM-as-judge:** Use strong model to grade weak model outputs
-- **52% of orgs run offline evals:** Industry standard for production agents
-
-**Which phase:** Phase 3 (Optimization) - build after core functionality works, before scaling
-
-**Detection:** Track quality metrics weekly (success rate, user satisfaction)
-
-**Sources:**
-- [State of AI Agent Engineering](https://www.langchain.com/state-of-agent-engineering)
-- [Best AI Testing Tools 2026](https://www.virtuosoqa.com/post/best-ai-testing-tools)
+**Phase to address:**
+Phase 2 (Identity System) must implement change tracking and version control for SOUL.md. Don't ship mutable identity without auditability.
 
 ---
 
-### Pitfall 12: No Fallback Provider Strategy
+## Technical Debt Patterns
 
-**What goes wrong:** OpenRouter goes down or rate-limits. Agent completely stops working. Users blocked until provider recovers.
+Shortcuts that seem reasonable but create long-term problems.
 
-**Why it happens:** Teams build against single provider. Don't test failover scenarios. Assume uptime is 100%.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| No embedding cache | Simpler code, no cache invalidation | 10x cost increase at scale, rate limit issues | MVP only, add in Phase 4 |
+| Single global auth token | Easy to implement, works quickly | Token compromise exposes all surfaces, no per-surface revocation | Never—implement proper auth in Phase 3 |
+| No memory conflict resolution | Simpler retrieval logic | User trust erosion, contradictory responses | Never—conflicts appear immediately |
+| Skip migration script | Faster v2.0 development | Data loss on upgrade, user frustration | Never—v1.0 data has value |
+| No context budget tracking | Add features without limits | Runtime failures, degraded performance | Early prototyping, track by Phase 1 end |
+| File writes without atomic pattern | Standard fs.writeFile works | Corruption under concurrent access, race conditions | Never in multi-surface architecture |
+| Vector-only search (no BM25) | One less system to integrate | Poor retrieval for keyword queries | Acceptable initially, add hybrid in Phase 4 |
+| SOUL.md without git tracking | Simpler file management | No audit trail, security risk, drift blindness | Never—git tracking is critical |
 
-**Consequences:**
-- Agent unavailable during provider outages (happens regularly)
-- Users see raw error messages without context
-- No graceful degradation to alternative provider
-- Business continuity dependent on single vendor SLA
+## Integration Gotchas
 
-**Warning signs:**
-- Agent returns 503 Service Unavailable to users
-- No fallback configured in code
-- Can't switch providers without code change
-- Incidents correlate with provider status pages
+Common mistakes when connecting to external services.
 
-**Prevention strategy:**
-- **Multi-provider architecture:** OpenRouter (primary) → OpenAI (fallback) → Anthropic (last resort)
-- **Automatic failover:** Retry same provider 3x with backoff, then switch to fallback
-- **Compatibility layer:** Abstract provider differences (unified API format)
-- **Model mapping:** Define fallback models (gpt-4 → claude-3-opus → gpt-4o)
-- **Monitoring:** Track which provider handled each request
-- **Test failover:** Monthly drill - disable primary, verify fallback works
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| ChromaDB | Not handling index corruption, no recovery procedure | Integrity checks on startup, automated reindex from WAL, corruption detection |
+| Claude Code SDK | Assuming system prompt budget is unlimited, not measuring overhead | Measure baseline tokens, define allocation budget per component, track usage |
+| Embedding API | Embedding every message, no batching, no caching | Batch requests, cache static content, use cost-effective models, local for privacy |
+| OAuth (Gmail) | Token refresh race conditions with concurrent requests | Implement refresh lock, check-lock-refresh pattern, serialize refresh operations |
+| File system (JSONL, preferences) | Using fs.writeFile directly, no atomicity | write-file-atomic package, temp file + atomic rename, same filesystem only |
+| SOUL.md loading | Trusting file content as safe, no integrity check | Checksum verification, git commit tracking, separate read-only vs. evolvable |
+| Memory retrieval | Pure vector similarity, no context filtering | Metadata filtering, recency weighting, hybrid BM25 + vector, query with context |
+| Tool API | No authentication, relying on network isolation | API key/JWT/mTLS auth, rate limiting, per-surface tokens, audit logging |
 
-**Which phase:** Phase 1 (Architecture) - design LLM client with multi-provider support from start
+## Performance Traps
 
-**Detection:** Monitor provider distribution, alert if fallback usage >10%
+Patterns that work at small scale but fail as usage grows.
 
-**Sources:**
-- [OpenRouter Model Fallbacks](https://openrouter.ai/docs/guides/routing/model-fallbacks)
-- [LLM Platform Outage Handling](https://www.requesty.ai/blog/handling-llm-platform-outages-what-to-do-when-openai-anthropic-deepseek-or-others-go-down)
-- [Zero-Downtime LLM Architecture](https://www.requesty.ai/blog/implementing-zero-downtime-llm-architecture-beyond-basic-fallbacks)
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Linear memory scan without index | All memories loaded and filtered in memory | Use vector index + metadata filtering from day one | >1000 memories (~1 week of active use) |
+| Embedding on read path | High latency on memory queries | Embed on write, cache embeddings, batch generation | >100 queries/day |
+| No context budget enforcement | Token limit errors, truncated responses | Define and enforce budget, dynamic allocation | Conversation >10 turns or memory >50 results |
+| Single-threaded tool queue | Slow multi-surface response, timeouts | Concurrent execution with proper locking for shared state | >2 active surfaces |
+| Full memory reindex on corruption | Minutes of downtime | Incremental reindex from WAL, keep embeddings separate | Index >10k vectors |
+| BM25 index rebuild on every search | Search latency increases with corpus | Build index once, update incrementally, persist to disk | >5k documents |
+| No memory compaction | Context window fills, can't fit conversation | Pre-compaction flush, periodic consolidation, ephemeral vs. durable | >50k tokens in memory |
+| Synchronous embedding generation | Tool calls block on embedding | Async embedding with queue, batch processing | >10 memories/day |
 
----
+## Security Mistakes
 
-## Minor Pitfalls
+Domain-specific security issues beyond general web security.
 
-Mistakes that cause annoyance but are easily fixable.
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Agent can modify SOUL.md directly | Persistent backdoor, behavioral compromise, scheduled re-infection | Read-only SOUL.md, user-confirmed changes only, git integrity checks |
+| Tool API without authentication | Unauthorized tool execution, data exfiltration, service abuse | API key/JWT minimum, per-surface tokens, rate limiting, audit log |
+| Embedding API keys in memory/logs | API key leakage, cost abuse, service compromise | Sanitize logs, use environment variables, rotate keys regularly |
+| No tool permission scoping | Tool compromise exposes all capabilities | Least privilege per surface, tool permission declarations, user approval for sensitive |
+| User input in memory without sanitization | Prompt injection via memory retrieval, behavior manipulation | Sanitize before storing, flag user content in metadata, validate on retrieval |
+| OAuth tokens in plaintext files | Token theft, account compromise | Encrypt at rest, use system keychain, rotate regularly, refresh on boot |
+| No audit trail for agent actions | Can't detect compromise, no accountability | Log tool invocations, SOUL.md changes, memory writes with surface identity |
+| Cron + self-config tools unrestricted | Scheduled backdoor persistence, unauthorized scheduling | Require confirmation, no self-modification, audit cron changes, sandbox tool execution |
 
-### Pitfall 13: Treating Agent as Drop-In Replacement for Human
+## UX Pitfalls
 
-**What goes wrong:** Users expect agent to handle everything a human assistant would. Agent can't, users get frustrated. Over-promise on capabilities, under-deliver on reliability.
+Common user experience mistakes in this domain.
 
-**Why it happens:** Marketing calls it "your AI assistant." Users don't understand limitations. Demo works great, production has edge cases.
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Silent memory storage | User doesn't know what's remembered, privacy concern | Explicit memory confirmations, "I'll remember that..." feedback, memory listing command |
+| No way to forget | Can't remove embarrassing/wrong memories | /forget command, memory editing UI, expiration for ephemeral facts |
+| Contradictory memory retrieval | Agent cites old + new info, confuses user | Conflict resolution, show recency in citations, "this supersedes..." |
+| Personality drift without notice | Behavior changes unexpectedly, trust loss | Change notifications, "my personality was updated" message, rollback option |
+| Memory search failures invisible | Wrong context used, no explanation why | Show retrieved memories, "based on..." attribution, confidence scores |
+| No migration feedback | Data loss feels like bug, frustration | "Migrating v1.0 sessions..." progress, success confirmation, rollback if fails |
+| Tool API errors opaque | "Something went wrong" without context | Surface-specific error messages, retry suggestions, tool status visibility |
+| Pre-compaction without warning | Context disappears, conversation continuity breaks | "Consolidating memory..." notice, seamless transition, no mid-sentence compaction |
 
-**Consequences:**
-- Users try tasks agent can't handle
-- Frustration when agent fails "obvious" tasks
-- Loss of trust after early failures
-- Support overhead explaining limitations
+## "Looks Done But Isn't" Checklist
 
-**Prevention strategy:**
-- Set realistic expectations upfront
-- Document what agent CAN'T do
-- Provide clear error messages when hitting limitations
-- Graceful refusal: "I can't do X, but I can do Y instead"
-- Incremental capability expansion (start narrow, expand over time)
+Things that appear complete but are missing critical pieces.
 
-**Which phase:** All phases - manage expectations continuously
+- [ ] **Memory search:** Vector retrieval works but missing conflict resolution, recency weighting, metadata filtering
+- [ ] **SOUL.md loading:** File loads into prompt but missing integrity checks, injection prevention, change tracking
+- [ ] **Tool API:** HTTP endpoint responds but missing authentication, rate limiting, concurrent execution handling
+- [ ] **Embedding generation:** Creates vectors but missing batching, caching, cost tracking, error handling
+- [ ] **ChromaDB integration:** Stores/retrieves but missing corruption detection, recovery procedure, integrity checks
+- [ ] **Session migration:** New format works but missing v1.0 import, backward compatibility, rollback support
+- [ ] **Pre-compaction flush:** Triggers before compaction but missing conflict detection, ephemeral vs. durable distinction
+- [ ] **Context budget:** Fits in window today but missing allocation tracking, dynamic adjustment, monitoring
+- [ ] **Concurrent access:** Works with one surface but missing atomic writes, distributed locks, race condition testing
+- [ ] **OAuth refresh:** Works sequentially but missing concurrency safety, token expiry handling, refresh lock
 
----
+## Recovery Strategies
 
-### Pitfall 14: Deployment Without Health Checks
+When pitfalls occur despite prevention, how to recover.
 
-**What goes wrong:** Agent crashes silently. Tmux session dies. No alerts. Users message, get no response. Team finds out hours later.
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| ChromaDB index corruption | LOW | 1. Stop services 2. Delete UUID directory under collection 3. Restart—reindex from WAL 4. Verify with test query |
+| SOUL.md injection | MEDIUM | 1. Git log SOUL.md 2. Identify malicious commit 3. Git revert to known-good 4. Audit cron jobs 5. Review agent logs 6. Rotate API keys |
+| Memory contradictions | LOW-MEDIUM | 1. Export all memories 2. Manual conflict resolution 3. Mark superseded memories 4. Reimport with metadata 5. Deploy conflict resolution |
+| Context budget blowout | LOW | 1. Measure current usage 2. Define budget allocation 3. Truncate memory results 4. Implement enforcement 5. Monitor |
+| Embedding cost spiral | MEDIUM | 1. Audit embedding calls 2. Add caching layer 3. Batch pending embeddings 4. Switch to cheaper model 5. Consider local |
+| OAuth token race condition | LOW | 1. Implement refresh lock 2. Serialize refresh operations 3. Add retry logic 4. Test concurrent refresh |
+| Data loss from migration | HIGH | 1. Restore from backup 2. Write migration script 3. Test on copy 4. Migrate with rollback 5. Verify integrity |
+| Tool API auth bypass | MEDIUM | 1. Disable endpoint 2. Implement auth 3. Rotate compromised tokens 4. Audit tool logs 5. Re-enable with auth |
+| Concurrent write corruption | MEDIUM | 1. Restore from backup/git 2. Implement atomic writes 3. Add distributed locks 4. Test concurrency 5. Deploy |
+| Personality drift | LOW | 1. Git diff SOUL.md 2. Review changes 3. Revert to baseline 4. Document intended personality 5. Add change tracking |
 
-**Why it happens:** VPS deployment is simple (`tmux new -d ./start.sh`), so teams skip monitoring. Assume it'll "just work."
+## Pitfall-to-Phase Mapping
 
-**Consequences:**
-- Silent failures go unnoticed
-- Users think agent is ignoring them
-- No visibility into what failed or when
-- Delayed incident response
+How roadmap phases should address these pitfalls.
 
-**Prevention strategy:**
-- **Heartbeat endpoint:** HTTP endpoint that returns 200 if healthy
-- **External monitoring:** UptimeRobot, BetterUptime, or similar
-- **Log aggregation:** Ship logs to centralized location
-- **Crash restart:** systemd service file with restart policy
-- **Alert on failure:** Telegram/email notification when health check fails
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Memory contradiction accumulation | Phase 1: Memory Foundation | Test with updating preferences, verify recency weighting works |
+| SOUL.md prompt injection | Phase 2: Identity System | Attempt to modify SOUL.md via prompt, verify rejection + git tracking |
+| Context window budget blowout | Phase 1: Memory Foundation | Load max memory results + long conversation, verify stays under budget |
+| Embedding cost spiral | Phase 1: Memory Foundation, optimize in Phase 4 | Track embedding costs for 1 week, verify batching + caching effective |
+| Vector index corruption | Phase 1: Memory Foundation | Kill process during write, verify automated recovery |
+| HTTP tool API authentication | Phase 3: Tool API | Attempt unauthenticated request, verify rejection + rate limiting |
+| Concurrent tool execution state corruption | Phase 3: Tool API | Parallel requests from multiple surfaces, verify no data loss |
+| JSONL session migration data loss | Phase 1: Memory Foundation | Test upgrade from v1.0 install, verify sessions + preferences preserved |
+| Memory search retrieving wrong context | Phase 1: Memory Foundation, improve in Phase 4 | Query with multiple projects, verify metadata filtering works |
+| Soul personality drift | Phase 2: Identity System | Modify SOUL.md several times, verify git history + rollback capability |
 
-**Which phase:** Phase 4 (Deployment) - implement before moving to VPS
+## Sources
 
----
+**Memory System Research:**
+- [How We Solved Memory Conflicts in Hindsight](https://hindsight.vectorize.io/blog/2026/02/09/resolving-memory-conflicts) - Memory contradiction handling
+- [Graph Memory for AI Agents](https://mem0.ai/blog/graph-memory-solutions-ai-agents) - Vector vs. graph memory, relationship preservation
+- [Why Most Chatbots Fail at Memory](https://deeflect.medium.com/why-most-chatbots-fail-at-memory-and-how-to-fix-it-cdc40d219fee) - Memory layer sync issues, contextually wrong retrieval
+- [Clawdbot's Memory Architecture & Pre-Compaction Flush](https://medium.com/aimonks/clawdbots-memory-architecture-pre-compaction-flush-the-engineering-reality-behind-never-c8ff84a4a11a) - Pre-compaction flush implementation
+- [Memory for AI Agents: A New Paradigm](https://thenewstack.io/memory-for-ai-agents-a-new-paradigm-of-context-engineering/) - Ephemeral vs. durable state distinction
 
-### Pitfall 15: Running Agent as Root on VPS
+**Identity & Security:**
+- [OpenClaw or Open Door? Prompt Injection Creates AI Backdoors](https://www.esecurityplanet.com/threats/openclaw-or-open-door-prompt-injection-creates-ai-backdoors/) - SOUL.md prompt injection vulnerability
+- [Agentic AI and Non-Human Identities](https://blog.gitguardian.com/nhicon-2026/) - Identity drift in agentic systems
+- [How OpenClaw Implements Agent Identity](https://www.mmntm.net/articles/openclaw-identity-architecture) - Soul, persona, identity separation
 
-**What goes wrong:** Agent has full system access. Malicious input or compromised skill can execute arbitrary commands as root. Complete system compromise possible.
+**Context & Performance:**
+- [Context Window Overflow in 2026](https://redis.io/blog/context-window-overflow/) - Context budget allocation challenges
+- [Context Window Management](https://www.getmaxim.ai/articles/context-window-management-strategies-for-long-context-ai-agents-and-chatbots/) - Dynamic allocation strategies
+- [Memory Blocks: The Key to Agentic Context Management](https://www.letta.com/blog/memory-blocks) - Persona block editing, stability vs. drift
 
-**Why it happens:** SSH as root is convenient. Agent needs to install packages. Seems easier than configuring sudo.
+**Embedding & Vector Search:**
+- [OpenAI Embeddings API Pricing Calculator](https://costgoat.com/pricing/openai-embeddings) - Cost optimization strategies
+- [Large-Scale AI Batch Inference: 9x Faster Embedding](https://blog.skypilot.co/large-scale-embedding/) - Batch processing benefits
+- [Embeddings in Production: Costs to Embed](https://medium.com/barnacle-labs/embeddings-in-production-or-how-nothing-scales-like-youd-expect-it-to-part-1-costs-to-embed-a82482765215) - Production scaling issues
+- [Recovering Data From A Corrupt SQLite Database](https://sqlite.org/recovery.html) - SQLite corruption recovery
+- [Rebuilding Chroma DB](https://cookbook.chromadb.dev/strategies/rebuilding/) - ChromaDB index corruption recovery
 
-**Consequences:**
-- Security nightmare (principle of least privilege violated)
-- Agent can modify system files, install packages, read all data
-- No isolation between agent and system
-- Audit trail doesn't distinguish between legitimate and malicious actions
+**Tool API & Concurrency:**
+- [Tool Calling Explained: The Core of AI Agents](https://composio.dev/blog/ai-agent-tool-calling-guide) - Tool API authentication best practices
+- [Race Conditions in REST APIs](https://medium.com/@mgaurang123/race-conditions-in-rest-apis-a-developers-guide-to-building-reliable-systems-42d4f8eabc1e) - HTTP API race conditions
+- [Refresh Token Race Condition](https://developers.apideck.com/guides/refresh-token-race-condition) - OAuth concurrent refresh issues
+- [Node.js File System in Practice: Production-Grade Guide](https://thelinuxcode.com/nodejs-file-system-in-practice-a-production-grade-guide-for-2026/) - Atomic write patterns
+- [write-file-atomic npm package](https://www.npmjs.com/package/write-file-atomic) - Atomic file operations
 
-**Prevention strategy:**
-- **Dedicated user:** Create `jarvis` user with limited permissions
-- **Sudo whitelist:** Only specific commands allowed via sudo (if needed)
-- **Docker container:** Run agent in container with resource limits
-- **MicroVMs:** For untrusted code execution (Firecracker, Kata)
-- **File system restrictions:** Agent only writes to `/home/jarvis/workspace`
+**Hybrid Search:**
+- [A Comprehensive Hybrid Search Guide](https://www.elastic.co/what-is/hybrid-search) - BM25 + vector fusion challenges
+- [Hybrid Search Revamped - Qdrant Query API](https://qdrant.tech/articles/hybrid-search/) - Reciprocal Rank Fusion (RRF) best practices
+- [Hybrid Search: Combining BM25 and Semantic Search](https://medium.com/etoai/hybrid-search-combining-bm25-and-semantic-search-for-better-results-with-lan-1358038fe7e6) - Score normalization pitfalls
 
-**Which phase:** Phase 4 (Deployment) - configure before initial VPS deployment
+**Claude Code SDK:**
+- [Modifying system prompts - Claude Agent SDK](https://docs.claude.com/en/docs/agent-sdk/modifying-system-prompts) - Custom instruction injection mechanisms
+- [Claude Code System Prompts](https://github.com/Piebald-AI/claude-code-system-prompts) - System prompt structure and overhead
+- [ClaudeLog - How to Update System Prompt](https://claudelog.com/faqs/how-to-update-system-prompt/) - Append vs. custom prompt patterns
 
-**Sources:**
-- [Security for Production AI Agents](https://iain.so/security-for-production-ai-agents-in-2026)
-- [AI Agent Sandboxing](https://blaxel.ai/blog/what-is-a-sandbox-environment)
-
----
-
-## Phase-Specific Warnings
-
-| Phase | Likely Pitfall | Mitigation |
-|-------|---------------|------------|
-| **Phase 1: Architecture** | Adopting frameworks that hide context usage | Build context observability from day one, follow pi-mono minimal tool philosophy |
-| **Phase 1: Architecture** | No cost tracking infrastructure | Implement LLM client with per-call cost logging before any other features |
-| **Phase 1: Architecture** | Single provider dependency | Design multi-provider LLM client with automatic failover |
-| **Phase 2: Triage Delegation** | Over-delegating to smart tier | Build 50-example test set, track delegation rate and cost per tier |
-| **Phase 2: Self-Configuration** | No validation on config edits | JSON schema validation + version control + rollback capability |
-| **Phase 2: Integrations** | OAuth token refresh failures | Switch Google app to Production mode, implement token rotation and expiration monitoring |
-| **Phase 2: Integrations** | API rate limiting breaks agent | Exponential backoff, request batching, graceful error messages |
-| **Phase 3: Multi-Channel** | Context fragmentation across channels | Unified user identity, shared conversation store, gateway pattern |
-| **Phase 3: Preferences** | Memory poisoning via preferences | Schema validation, allowlist approach, diff approval |
-| **Phase 3: Optimization** | No evaluation framework | Build test dataset + regression testing before scaling |
-| **Phase 4: Deployment** | Tmux zombie processes | Defense-in-depth cleanup (process group, TTY, periodic cron) |
-| **Phase 4: Deployment** | Silent crashes without alerts | Health checks + external monitoring + systemd restart policy |
-| **Phase 4: Deployment** | Running as root | Dedicated user with limited permissions |
-
----
-
-## Pi-Mono Migration Specific
-
-Critical considerations when migrating from custom agent code to pi-mono architecture.
-
-### Migration Pitfall 1: Tool Philosophy Mismatch
-
-**Problem:** Your custom agent has 15+ specialized tools. Pi-mono expects 4 core tools + extensions.
-
-**What breaks:** Direct tool migration creates context bloat. Agent can't extend itself because everything is pre-built.
-
-**Solution:**
-- Keep Read, Write, Edit, Bash as core
-- Convert specialized tools to hot-reloadable extensions
-- Let agent write and maintain extensions as TypeScript modules
-- Only keep tools that truly need LLM context (not everything)
-
----
-
-### Migration Pitfall 2: Background Process Assumptions
-
-**Problem:** Your agent uses background bash processes. Pi-mono prefers tmux for observability.
-
-**What breaks:** Can't debug background processes. Can't co-debug with agent. Zombie processes accumulate.
-
-**Solution:**
-- Migrate background tasks to tmux windows
-- Use tmux for any long-running agent sessions
-- Implement proper process cleanup (see Pitfall 3)
-- Embrace observability over convenience
-
----
-
-### Migration Pitfall 3: Stateful Orchestrator Pattern
-
-**Problem:** Your gateway maintains conversation state in memory. Pi-mono prefers stateless handoffs.
-
-**What breaks:** Doesn't scale beyond single instance. Memory leaks over time. Crash loses all state.
-
-**Solution:**
-- Move state to persistent storage (files, DB)
-- Gateway becomes thin routing layer
-- Session state persists in files or session objects
-- Enables horizontal scaling and crash recovery
+**Migration & Compatibility:**
+- [Critical Bug: Session history lost after auto-update](https://github.com/anthropics/claude-code/issues/12114) - JSONL migration breaking changes
+- [JSON Schema Compatibility Checker](https://github.com/json-schema-org/community/issues/984) - Backward compatibility detection
 
 ---
-
-### Migration Pitfall 4: Custom Prompt vs System Extension
-
-**Problem:** Your custom behavior lives in 10,000-token system prompt. Pi-mono expects minimal prompt + extensions.
-
-**What breaks:** Context window filled with instructions. Can't update behavior without restarting.
-
-**Solution:**
-- Extract domain-specific logic to extensions
-- Keep system prompt under 500 tokens
-- Use skills for workflow-specific patterns
-- Hot-reload extensions rather than restarting
-
----
-
-## Security Considerations Summary
-
-**Top 3 Security Risks for Self-Hosted Personal AI:**
-
-1. **Prompt Injection → Data Exfiltration:** Skills or preferences contain instructions to send data to attacker-controlled servers
-2. **Static Credentials:** API keys in config files with no rotation or expiration
-3. **Privilege Escalation:** Agent running as root or with excessive permissions
-
-**Mitigation Checklist:**
-- [ ] Validate all user-provided data before persistence (preferences, config edits)
-- [ ] Scan preferences/config for executable content (URLs, shell commands)
-- [ ] Rotate OAuth tokens automatically
-- [ ] Run agent as dedicated non-root user
-- [ ] Implement audit logging for all file writes and command executions
-- [ ] Use short-lived credentials where possible
-- [ ] Monitor for anomalous behavior (unexpected file access, network connections)
-
----
-
-## Sources & Further Reading
-
-**Pi-Mono Architecture:**
-- [What I learned building an opinionated and minimal coding agent](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) - Critical lessons from pi-coding-agent creator
-- [Pi: The Minimal Agent Within OpenClaw](https://lucumr.pocoo.org/2026/1/31/pi/) - Pi-mono design philosophy and patterns
-- [Pi-mono GitHub Repository](https://github.com/badlogic/pi-mono) - Official toolkit
-
-**Production AI Agent Pitfalls:**
-- [Why AI Pilots Fail in Production](https://composio.dev/blog/why-ai-agent-pilots-fail-2026-integration-roadmap) - Dumb RAG, brittle connectors, polling tax
-- [State of AI Agent Engineering](https://www.langchain.com/state-of-agent-engineering) - Industry survey on observability, testing, quality
-- [5 Fatal Mistakes in Production](https://dev.to/agentsphere/5-fatal-mistakes-why-your-ai-agent-keeps-failing-in-production-4pk3)
-
-**Security & Safety:**
-- [Personal AI Agents Are a Security Nightmare](https://blogs.cisco.com/ai/personal-ai-agents-like-openclaw-are-a-security-nightmare) - OpenClaw security analysis
-- [OWASP Agentic Security Initiative Top 10](https://medium.com/@oracle_43885/owasps-ai-agent-security-top-10-agent-security-risks-2026-fc5c435e86eb) - Tool misuse, memory poisoning, privilege compromise
-- [Security for Production AI Agents 2026](https://iain.so/security-for-production-ai-agents-in-2026)
-
-**Context & Memory Management:**
-- [Context Window Overflow in 2026](https://redis.io/blog/context-window-overflow/) - How to handle context exhaustion
-- [Ultimate Guide to LLM Memory](https://medium.com/@sonitanishk2003/the-ultimate-guide-to-llm-memory-from-context-windows-to-advanced-agent-memory-systems-3ec106d2a345) - Memory tiering, summarization
-
-**Cost & Observability:**
-- [LLM Cost Monitoring Tools 2026](https://langwatch.ai/blog/4-best-tools-for-monitoring-llm-agentapplications-in-2026)
-- [AI Agent Production Costs 2026](https://www.agentframeworkhub.com/blog/ai-agent-production-costs-2026) - Real cost data
-- [Best LLM Monitoring Tools](https://www.braintrust.dev/articles/best-llm-monitoring-tools-2026)
-
-**Integration Challenges:**
-- [OAuth Agent-to-Agent Authentication](https://dev.to/composiodev/4-best-ai-agent-authentication-platforms-to-consider-in-2026-32o8)
-- [Notion API Rate Limits](https://developers.notion.com/reference/request-limits) - 3 req/sec average
-- [OpenRouter Model Fallbacks](https://openrouter.ai/docs/guides/routing/model-fallbacks)
-
-**Multi-Agent Patterns:**
-- [Triangle: Multi-LLM Agent Triage](https://www.microsoft.com/en-us/research/wp-content/uploads/2025/02/TRIANGLE_FSE25.pdf) - Microsoft Research on triage systems
-- [Multi-Agent Systems Architecture](https://www.comet.com/site/blog/multi-agent-systems/) - Delegation patterns
-
-**Tmux & Process Management:**
-- [Gastown Orphan Process Cleanup](https://github.com/steveyegge/gastown/issues/29) - Defense-in-depth strategy
-- [Tmux Agent Orchestration](https://x.com/kieranklaassen/status/2007128073813336206)
-
-**Multi-Channel Messaging:**
-- [Clawdbot: One Brain, Many Channels](https://medium.com/@imranmsa93/how-clawdbot-enables-one-brain-many-channels-ai-agents-across-whatsapp-slack-telegram-and-b49242261419) - Gateway pattern for unified context
-- [Moltbot Review](https://leaveit2ai.com/ai-tools/productivity/moltbot) - Context persistence across channels
+*Pitfalls research for: jarvis v2.0 Agent Architecture*
+*Researched: 2026-02-12*
+*Confidence: MEDIUM-HIGH (strong web search + official docs, verified with multiple sources)*

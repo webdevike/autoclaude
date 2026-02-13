@@ -21,6 +21,7 @@ export interface ModeConfig {
   crons: CronJobConfig[];
   cwd?: string; // working directory for tool execution (defaults to process.cwd())
   claudeCode?: {
+    model?: string; // Claude model ID (e.g. "claude-haiku-4-5-20251001")
     allowedTools?: string[]; // auto-approve these tools without prompting
     tools?: string[]; // limit available built-in tools (skips MCP loading if set)
     permissionMode?: "default" | "bypassPermissions" | "acceptEdits";

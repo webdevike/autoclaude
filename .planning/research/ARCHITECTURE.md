@@ -1,458 +1,573 @@
-# Architecture: Personal AI Assistant on pi-mono
+# Architecture Research
 
-**Domain:** Self-hosted personal AI assistant
-**Researched:** 2026-02-05
+**Domain:** AI Agent with Persistent Memory, Identity, and HTTP Tool API
+**Researched:** 2026-02-12
 **Confidence:** HIGH
 
-## Executive Summary
+## Standard Architecture for AI Agents with Memory (2026)
 
-A personal AI assistant built on pi-mono should be architected as a **channel adapter layer** sitting above pi-mono's agent core, rather than replacing pi-mono components. The migration path involves gradually replacing custom LLM and agent code with pi-mono packages while keeping the domain-specific orchestration logic (channels, integrations, modes, scheduling) intact.
-
-The current Jarvis architecture follows a **Gateway → Orchestrator → Triage → Smart Agent** pattern. The target architecture preserves this flow but delegates the agent loop, LLM calls, and tool execution to pi-mono's proven implementations.
-
-## Recommended Architecture
+### System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        User Interfaces                      │
-│  Telegram │ WhatsApp │ Slack (pi-mom) │ Web UI │ CLI      │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                   Gateway (Channel Router)                   │
-│  • Routes messages from channels to appropriate mode        │
-│  • Manages placeholder/edit for progress updates            │
-│  • Broadcasts scheduled messages                            │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│              Mode Manager + Orchestrator                     │
-│  • Switches between personal/work/coding modes              │
-│  • Triage: cheap model decides handle vs delegate           │
-│  • Session tracking and status updates                      │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-         ┌─────────────┴─────────────┐
-         │                           │
-┌────────▼────────┐        ┌────────▼────────────────────────┐
-│  Triage Agent   │        │   pi-mono Agent (Smart Tier)    │
-│  (Quick Reply)  │        │  • pi-ai: LLM abstraction       │
-│                 │        │  • pi-agent-core: agent loop    │
-│  Simple Q&A,    │        │  • Tool execution & streaming   │
-│  Commands       │        │  • Session persistence          │
-└─────────────────┘        └────────┬────────────────────────┘
-                                    │
-                  ┌─────────────────┼─────────────────┐
-                  │                 │                 │
-         ┌────────▼────────┐  ┌────▼────┐  ┌────────▼────────┐
-         │  Integrations   │  │  Tools  │  │    Scheduler    │
-         │  • Gmail        │  │  • Bash │  │  Cron-triggered │
-         │  • Notion       │  │  • Read │  │  agent tasks    │
-         │  • Linear       │  │  • Write│  │                 │
-         │  • Exa Search   │  │  • Edit │  │                 │
-         └─────────────────┘  └─────────┘  └─────────────────┘
+│                     Client Surfaces                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │ Telegram │  │ LiveKit  │  │   iOS    │  │   HTTP   │    │
+│  │ Channel  │  │  Voice   │  │   App    │  │   API    │    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
+├───────┴──────────────┴──────────────┴──────────────┴─────────┤
+│                        Gateway Layer                          │
+│         (Routes messages, manages surface protocol)           │
+├─────────────────────────────────────────────────────────────┤
+│                    Agent Orchestrator                         │
+│  ┌───────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ Memory System │  │ Tool Registry│  │ Identity Loader │  │
+│  │ (semantic +   │  │ (HTTP API +  │  │ (SOUL.md)       │  │
+│  │  BM25 search) │  │  MCP bridge) │  │                 │  │
+│  └───────┬───────┘  └──────┬───────┘  └────────┬────────┘  │
+├──────────┴──────────────────┴──────────────────┴────────────┤
+│                      LLM Provider Layer                       │
+│    (Claude Code SDK, OpenAI Realtime, pi-ai fallback)        │
+├─────────────────────────────────────────────────────────────┤
+│                     Storage & Execution                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │ Vector   │  │ JSONL    │  │ Tool     │  │ Session  │    │
+│  │ Index    │  │ Memory   │  │ Exec Env │  │ State    │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Component Boundaries
+### Component Responsibilities
 
-### 1. Gateway (Keep, Enhance)
-**Responsibility:** Channel-agnostic message routing and broadcasting
-**Communicates with:** Channels, Mode Manager, Orchestrator
-**Keep from current:** Multi-channel architecture, placeholder/edit pattern
-**Add:** RPC mode support for embedding in other apps
+| Component | Responsibility | Typical Implementation |
+|-----------|----------------|------------------------|
+| Gateway | Message routing, surface protocol handling | HTTP server + channel adapters |
+| Agent Orchestrator | Session management, tool coordination, memory integration | Stateful service with LLM SDK integration |
+| Memory System | Semantic search, persistence, compaction | Vector DB + JSONL files + embeddings model |
+| Tool Registry | Unified tool definitions, execution, HTTP API | Express/Fastify API + tool wrappers |
+| Identity Loader | SOUL.md parsing, system prompt injection | File watcher + markdown parser |
+| LLM Provider | Model inference, streaming, tool calling | Claude Code SDK / OpenAI Realtime |
 
-### 2. Channel Adapters (Keep, Standardize)
-**Responsibility:** Protocol-specific I/O (Telegram, Slack, WhatsApp, etc.)
-**Communicates with:** Gateway
-**Keep from current:** Telegram polling, authentication
-**Add:** pi-mom integration for Slack, WhatsApp adapter
-**Interface:** `Channel` type from @jarvis/core
+## Recommended Project Structure for v2.0
 
-### 3. Mode Manager (Keep, Simplify)
-**Responsibility:** Context switching between personal/work/coding modes
-**Communicates with:** Gateway, Orchestrator
-**Keep from current:** Mode configs (system prompt, tiers, integrations)
-**Simplify:** Remove mode-specific channel bindings, flatten to preferences
+### New Packages Required
 
-### 4. Orchestrator (Replace Core, Keep Triage)
-**Responsibility:** Decides whether to handle quickly or delegate to smart agent
-**Communicates with:** Mode Manager, Triage Agent, pi-mono Agent
-**Keep from current:** Triage decision logic, session tracking
-**Replace:** `runSmartAgent()` internals with pi-mono Agent class
-**Add:** Support for pi-coding-agent RPC mode for coding tasks
+```
+packages/
+├── core/                    # EXISTING — modify for memory + identity
+│   ├── src/
+│   │   ├── agent.ts         # MODIFY — inject SOUL.md + memory context
+│   │   ├── memory/          # NEW — memory system
+│   │   │   ├── manager.ts   # MemoryManager class
+│   │   │   ├── search.ts    # Hybrid BM25 + vector search
+│   │   │   ├── embeddings.ts # Embedding model integration
+│   │   │   └── compaction.ts # JSONL log → MEMORY.md
+│   │   ├── identity/        # NEW — SOUL.md system
+│   │   │   ├── loader.ts    # Load + parse SOUL.md
+│   │   │   └── types.ts     # Soul schema types
+│   │   └── types.ts         # MODIFY — add memory types
+│
+├── gateway/                 # EXISTING — minimal changes
+│   └── src/
+│       └── index.ts         # MODIFY — route /api/tools/* to tool-api
+│
+├── tool-api/                # NEW — HTTP tool invoke endpoint
+│   ├── src/
+│   │   ├── server.ts        # Express/Fastify server
+│   │   ├── registry.ts      # ToolRegistry class
+│   │   ├── routes/
+│   │   │   ├── invoke.ts    # POST /tools/:name/invoke
+│   │   │   └── list.ts      # GET /tools
+│   │   └── auth.ts          # API key validation
+│   └── package.json
+│
+└── livekit-agent/           # EXISTING — modify to use HTTP tool API
+    └── src/
+        ├── agent.ts         # MODIFY — call HTTP tool API instead of direct
+        └── tools.ts         # REMOVE — no longer needed with HTTP API
+```
 
-### 5. pi-mono Agent (New, Core)
-**Responsibility:** Agent loop, tool execution, LLM streaming
-**Communicates with:** Orchestrator, Tools, Integrations
-**Use:** `Agent` class from `@mariozechner/pi-agent-core`
-**Use:** `stream()` from `@mariozechner/pi-ai`
-**Provides:** Event-driven progress updates, persistent sessions
+### Workspace Directory Structure
 
-### 6. Tool Registry (Hybrid)
-**Responsibility:** Makes external capabilities available to LLM
-**Communicates with:** pi-mono Agent
-**Keep from current:** Integration tool wrappers (Gmail, Notion, Linear)
-**Replace:** Built-in tools (Bash, Read, Write, Edit) with pi-mono defaults
-**Add:** Exa web search tool, preference management tool
+```
+~/.jarvis/
+├── workspace/               # NEW — OpenClaw-style workspace
+│   ├── SOUL.md              # Agent identity, personality, rules
+│   ├── MEMORY.md            # Curated long-term memories
+│   ├── logs/                # Daily JSONL logs
+│   │   ├── 2026-02-12.jsonl
+│   │   ├── 2026-02-11.jsonl
+│   │   └── ...
+│   └── .index/              # Vector embeddings index
+│       ├── embeddings.db    # SQLite with pgvector or LanceDB
+│       └── metadata.json    # Index metadata
+├── sessions/                # EXISTING — per-user session history
+│   └── [userId]/
+│       └── messages.jsonl
+├── preferences/             # EXISTING — user preferences
+└── config/                  # EXISTING — mode configs (mapped from project root)
+```
 
-### 7. Integration Adapters (Keep, Refactor)
-**Responsibility:** Domain-specific API wrappers (Gmail, Notion, Linear, Exa)
-**Communicates with:** Tool Registry
-**Keep from current:** OAuth flows, API clients, tool definitions
-**Refactor:** Convert to pi-mono Extension format for reusability
+### Structure Rationale
 
-### 8. Scheduler (Keep, Reconnect)
-**Responsibility:** Cron-triggered agent tasks
-**Communicates with:** Orchestrator
-**Keep from current:** Cron parsing, job queue
-**Change:** Trigger pi-mono Agent sessions instead of custom triage/smart flow
+- **packages/core/memory/:** Co-located with agent logic because memory loading happens at session start
+- **packages/tool-api/:** Separate package because it runs as independent HTTP service (can scale independently)
+- **workspace/:** File-based for simplicity, inspectable by humans, git-committable for versioning identity
+- **.index/:** Separate from logs because vector indices need rebuild/optimization independent of log rotation
 
-### 9. Status Reporter (Keep, Enhance)
-**Responsibility:** Periodic summaries of agent activity
-**Communicates with:** Orchestrator, Channels
-**Keep from current:** Interval-based reporting
-**Enhance:** Subscribe to pi-mono Agent events for richer status
+## Architectural Patterns
 
-### 10. Persistent Preferences (New)
-**Responsibility:** User-specific settings, context, memory
-**Communicates with:** Mode Manager, pi-mono Agent
-**Storage:** JSON file per user (e.g., `~/.jarvis/preferences/telegram_user123.json`)
-**Schema:** Structured preferences + unstructured notes
+### Pattern 1: Memory Context Injection
+
+**What:** Load relevant memories into LLM system prompt at session start instead of RAG-style mid-conversation retrieval
+
+**When to use:** For AI agents with conversational continuity needs, where past context informs current behavior
+
+**Trade-offs:**
+- **Pro:** Simpler architecture (no mid-conversation retrieval), lower latency (one search upfront)
+- **Pro:** Agent sees memories as part of context, can reason about them naturally
+- **Con:** Fixed context at session start (new memories from current session not searchable until next session)
+- **Con:** Context window consumed by memories (limits turn depth)
+
+**Example:**
+```typescript
+async function loadSessionContext(userId: string, currentPrompt: string) {
+  // 1. Load SOUL.md (identity)
+  const soul = await loadSoul();
+
+  // 2. Search memory for relevant context
+  const relevantMemories = await memoryManager.search({
+    query: currentPrompt,
+    limit: 10,
+    threshold: 0.7
+  });
+
+  // 3. Compose system prompt
+  const systemPrompt = `
+${soul.content}
+
+## Relevant Memories
+
+${relevantMemories.map(m => `- ${m.content}`).join('\n')}
+
+## Current Conversation
+
+User: ${currentPrompt}
+`;
+
+  return systemPrompt;
+}
+```
+
+### Pattern 2: Hybrid Vector + BM25 Search
+
+**What:** Combine semantic similarity (vector embeddings) with keyword matching (BM25) for robust memory retrieval
+
+**When to use:** When users reference specific terms/names that embeddings might miss, or when semantic drift causes relevance issues
+
+**Trade-offs:**
+- **Pro:** Catches both semantic matches ("help with email") and exact matches ("the Linear issue about authentication")
+- **Pro:** More robust to embedding model limitations
+- **Con:** More complex than pure vector search
+- **Con:** Requires maintaining two indices (vector + inverted index)
+
+**Example:**
+```typescript
+interface SearchResult {
+  content: string;
+  score: number;
+  source: 'vector' | 'bm25';
+}
+
+async function hybridSearch(query: string): Promise<SearchResult[]> {
+  // Run both searches in parallel
+  const [vectorResults, bm25Results] = await Promise.all([
+    vectorIndex.search(query, { limit: 20 }),
+    bm25Index.search(query, { limit: 20 })
+  ]);
+
+  // Merge with reciprocal rank fusion (RRF)
+  const merged = mergeWithRRF(vectorResults, bm25Results);
+
+  // Return top K
+  return merged.slice(0, 10);
+}
+```
+
+### Pattern 3: Tool Registry with HTTP API + MCP Bridge
+
+**What:** Single canonical tool registry exposed via HTTP API (for external clients) and in-process MCP server (for Claude Code SDK)
+
+**When to use:** Multi-surface AI agents where tools need to be accessible from different runtimes (Node.js, browser, iOS)
+
+**Trade-offs:**
+- **Pro:** Single source of truth for tool definitions and execution
+- **Pro:** External surfaces (iOS, web) can call tools over HTTP without embedding tool logic
+- **Pro:** Observability — all tool calls flow through one endpoint
+- **Con:** HTTP overhead for in-process calls (mitigated by keeping MCP bridge for text agent)
+- **Con:** More complex deployment (two tool access paths)
+
+**Example:**
+```typescript
+// packages/tool-api/src/registry.ts
+class ToolRegistry {
+  private tools = new Map<string, ToolDefinition>();
+
+  register(tool: ToolDefinition) {
+    this.tools.set(tool.name, tool);
+  }
+
+  async invoke(name: string, params: unknown): Promise<string> {
+    const tool = this.tools.get(name);
+    if (!tool) throw new Error(`Tool not found: ${name}`);
+    return tool.execute(params);
+  }
+
+  list(): ToolDefinition[] {
+    return Array.from(this.tools.values());
+  }
+}
+
+// packages/tool-api/src/routes/invoke.ts
+app.post('/tools/:name/invoke', async (req, res) => {
+  const { name } = req.params;
+  const params = req.body;
+
+  try {
+    const result = await registry.invoke(name, params);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// packages/livekit-agent/src/agent.ts (MODIFIED)
+const tools = await fetch('http://localhost:3457/tools').then(r => r.json());
+const toolContext = tools.reduce((ctx, tool) => {
+  ctx[tool.name] = llm.tool({
+    description: tool.description,
+    parameters: zodFromJsonSchema(tool.parameters),
+    execute: async (params) => {
+      const res = await fetch(`http://localhost:3457/tools/${tool.name}/invoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      return res.json().then(d => d.result);
+    }
+  });
+  return ctx;
+}, {});
+```
+
+### Pattern 4: Pre-Compaction Memory Flush
+
+**What:** Before compacting daily logs into MEMORY.md, let LLM extract key facts/decisions from raw session data
+
+**When to use:** When logs contain important context that would be lost in naive log rotation (OpenClaw pattern)
+
+**Trade-offs:**
+- **Pro:** Preserves important context that BM25/vector search might miss
+- **Pro:** Human-readable MEMORY.md serves as audit trail
+- **Con:** LLM call overhead during compaction (acceptable if run async/overnight)
+- **Con:** Quality depends on prompt engineering for extraction
+
+**Example:**
+```typescript
+async function compactLogs(startDate: Date, endDate: Date) {
+  // 1. Load raw logs
+  const logs = await loadLogsBetween(startDate, endDate);
+
+  // 2. Ask LLM to extract key memories
+  const prompt = `
+Review this conversation log and extract 5-10 key facts, decisions, or context
+that should be preserved for future sessions.
+
+Format: One fact per line, starting with a dash.
+
+${logs.map(l => `[${l.timestamp}] ${l.role}: ${l.content}`).join('\n')}
+`;
+
+  const extraction = await llm.query(prompt);
+
+  // 3. Append to MEMORY.md
+  await appendToMemory(`\n## ${formatDate(endDate)}\n${extraction}\n`);
+
+  // 4. Update vector index with new memories
+  await embedAndIndex(extraction);
+
+  // 5. Archive raw logs
+  await archiveLogs(startDate, endDate);
+}
+```
 
 ## Data Flow
 
-### Synchronous Request Flow
+### Session Start Flow (with Memory + Identity)
+
 ```
-User message
-  → Channel (Telegram/Slack)
-    → Gateway.handleIncoming()
-      → Orchestrator.handleMessage()
-        → Triage LLM call (Haiku/cheap)
-          ├─ Handle directly → Return text
-          └─ DELEGATE marker detected
-              → pi-mono Agent.prompt()
-                → stream() LLM call
-                  → Tool calls detected
-                    → Tool.execute()
-                      → Integration API call
-                    → Results fed back to LLM
-                  → Final response
-                → Event stream → Progress updates
-              → Return text
-        → Gateway sends response
-      → Channel delivers to user
+User sends message
+    ↓
+Gateway → AgentOrchestrator.handleMessage()
+    ↓
+Load SOUL.md → Parse identity, personality, rules
+    ↓
+Semantic search → Query vector index + BM25 for relevant memories
+    ↓
+Compose system prompt → SOUL.md + top memories + user preferences
+    ↓
+Claude Code SDK query() → Send prompt with augmented context
+    ↓
+Stream response → Back to user via Gateway
+    ↓
+Log to JSONL → ~/.jarvis/workspace/logs/YYYY-MM-DD.jsonl
 ```
 
-### Asynchronous Scheduler Flow
+### Tool Invocation Flow (HTTP API)
+
 ```
-Cron trigger
-  → Scheduler.executeCronJob()
-    → Orchestrator.handleMessage() (synthetic message)
-      → [Same as synchronous flow]
-    → Result stored/broadcast via Gateway
+[Text Agent - Claude Code SDK]
+    ↓
+MCP bridge (in-process) → ToolRegistry.invoke() → Execute tool
+    ↓
+Return result to LLM
+
+[Voice Agent - LiveKit]
+    ↓
+HTTP POST /tools/:name/invoke → ToolRegistry.invoke() → Execute tool
+    ↓
+Return JSON result → Convert to llm.ToolResult
+
+[iOS App]
+    ↓
+HTTP POST /tools/:name/invoke → ToolRegistry.invoke() → Execute tool
+    ↓
+Return JSON result → Render tool card in UI
 ```
 
-### Status Update Flow
+### Memory Compaction Flow (Nightly)
+
 ```
-StatusReporter interval tick
-  → Orchestrator.getSessions()
-  → Orchestrator.getActiveSessions()
-  → Format summary
-  → Gateway.broadcast()
-    → Channels deliver
+Cron job triggers at 3am
+    ↓
+Load today's logs → ~/.jarvis/workspace/logs/YYYY-MM-DD.jsonl
+    ↓
+LLM extraction → "What key facts/decisions should be preserved?"
+    ↓
+Append to MEMORY.md → Human-readable curated memories
+    ↓
+Embed new memories → Generate vector embeddings
+    ↓
+Update vector index → Add to SQLite/LanceDB
+    ↓
+Archive logs → Move JSONL to ~/.jarvis/workspace/logs/archive/
 ```
 
-## Migration Path: Current → Target
+### Key Data Flows
 
-### Phase 1: Replace LLM Client (Week 1)
-**Goal:** Swap `@jarvis/core/LLMClient` with `@mariozechner/pi-ai`
+1. **Identity Loading:** SOUL.md read at every session start, parsed into sections (role, personality, rules, tools), injected into system prompt before first LLM call
+2. **Memory Search:** Triggered by user message, runs hybrid search (vector + BM25), returns top 10 results ranked by relevance, formatted into system prompt
+3. **Tool Execution:** Text agent uses in-process MCP bridge (low latency), voice/iOS use HTTP API (network overhead acceptable for human-speed interactions)
 
-**Changes:**
-- Replace `LLMClient.chat()` with `stream()` from pi-ai
-- Refactor provider strings: `"openrouter/anthropic/claude-3.5-sonnet"` → pi-ai format
-- Update `ModelConfig` type to match pi-ai's provider resolution
-- Keep retry logic and fallback behavior
+## Integration Points for v2.0
 
-**Dependencies:** None (pure swap)
+### New Components in Existing Architecture
 
-**Testing:** Triage still works, smart agent loop unchanged
+| Existing Component | Integration Required | Change Type |
+|--------------------|----------------------|-------------|
+| AgentOrchestrator | Load SOUL.md + memories at session start | MODIFY |
+| AgentOrchestrator.delegateToClaudeCode() | Inject memory context into systemPrompt | MODIFY |
+| SessionManager | Write to workspace/logs/ instead of sessions/ | MODIFY |
+| Gateway | Route /api/tools/* to tool-api package | ADD ROUTE |
+| LiveKit agent | Replace direct tool calls with HTTP API calls | MODIFY |
+| Extensions | Register tools with ToolRegistry on init | MODIFY |
 
-**Risk:** Low (pi-ai is stable, well-documented)
+### New Packages and Their Interfaces
 
-### Phase 2: Replace Agent Loop (Week 2)
-**Goal:** Swap `AgentOrchestrator.runSmartAgent()` with pi-mono `Agent` class
+**@jarvis/tool-api** (new package):
+- Exports: `ToolRegistry`, `startToolServer(port: number)`
+- HTTP API: `GET /tools`, `POST /tools/:name/invoke`
+- Used by: LiveKit agent, iOS app, future web clients
 
-**Changes:**
-- Import `Agent` from `@mariozechner/pi-agent-core`
-- Replace manual tool call loop with `agent.prompt()`
-- Subscribe to agent events (`text_delta`, `toolcall_end`, `turn_end`) for progress
-- Persist sessions using agent's session management
-- Remove custom `maxTurns` logic (pi-mono handles this)
+**@jarvis/core/memory** (new module):
+- Exports: `MemoryManager`, `loadSoul()`, `searchMemories()`
+- Used by: AgentOrchestrator (at session start)
 
-**Dependencies:** Phase 1 (uses pi-ai stream)
+**@jarvis/core/identity** (new module):
+- Exports: `loadSoul()`, `Soul` type
+- Used by: AgentOrchestrator (at session start)
 
-**Testing:** Smart agent delegation works, tools execute, progress updates flow
+### Modified Data Flows
 
-**Risk:** Medium (event model different from current callback approach)
-
-### Phase 3: Standardize Tools (Week 3)
-**Goal:** Convert custom tool definitions to pi-mono Extension format
-
-**Changes:**
-- Replace built-in tools (Bash, Read, Write, Edit) with pi-mono defaults
-- Wrap integration tools (Gmail, Notion, Linear) in pi-mono tool schema (TypeBox)
-- Migrate integration code to Extension structure for reusability
-- Add Exa web search tool as Extension
-
-**Dependencies:** Phase 2 (agent loop must support extensions)
-
-**Testing:** All existing integrations work via new tool format
-
-**Risk:** Low (mostly mechanical refactoring)
-
-### Phase 4: Add Persistent Preferences (Week 4)
-**Goal:** Store per-user context and preferences
-
-**Changes:**
-- Create `PreferenceStore` class (JSON file per user)
-- Add `get_preference`, `set_preference`, `search_memory` tools
-- Inject user preferences into system prompt context
-- Add preference management commands to gateway
-
-**Dependencies:** Phase 3 (tool registry established)
-
-**Testing:** Preferences persist across sessions, influence responses
-
-**Risk:** Low (new feature, no breaking changes)
-
-### Phase 5: Integrate pi-coding-agent (Week 5)
-**Goal:** Delegate coding tasks to specialized pi-coding-agent
-
-**Changes:**
-- Add pi-coding-agent RPC mode integration
-- Extend triage logic to detect coding requests
-- Route coding tasks to pi-coding-agent process
-- Map pi-coding-agent extensions to Jarvis integrations
-
-**Dependencies:** Phase 2 (agent orchestration stable)
-
-**Testing:** Coding requests handled by pi-coding-agent, output formatted for channels
-
-**Risk:** Medium (RPC integration, process management)
-
-### Phase 6: Add Self-Configuration (Week 6)
-**Goal:** Agent can modify its own mode configs and scheduled tasks
-
-**Changes:**
-- Add `update_mode_config`, `add_cron`, `remove_cron` tools
-- Add `switch_mode` tool (already exists as command)
-- Persist changes to disk (config files)
-- Add confirmation prompts for destructive changes
-
-**Dependencies:** Phase 4 (preferences inform config decisions)
-
-**Testing:** Agent can manage its own schedule and behavior
-
-**Risk:** Medium (file writes, validation needed)
-
-## What to Keep
-
-### From Current Architecture
-1. **Gateway pattern** — Multi-channel support is domain-specific, not in pi-mono
-2. **Triage decision** — Cost-saving cheap model triage is effective
-3. **Mode system** — Personal/work context switching is valuable
-4. **Integration adapters** — Gmail, Notion, Linear are custom, not in pi-mono
-5. **Scheduler** — Cron-based agent tasks are unique to personal assistant use case
-
-### From pi-mono
-1. **Agent loop** — Proven, event-driven, handles edge cases
-2. **LLM abstraction** — 20+ providers, context handoff, token tracking
-3. **Tool format** — TypeBox schemas, validation, standard interface
-4. **Session persistence** — JSONL append-only log, branching support
-5. **Extension system** — Hot reload, lifecycle hooks, modular
-
-## What to Replace
-
-### Custom Code → pi-mono
-1. **LLMClient** → `@mariozechner/pi-ai/stream()`
-2. **Agent loop** → `@mariozechner/pi-agent-core/Agent`
-3. **Tool definitions** → pi-mono Extension format with TypeBox
-4. **Built-in tools** (Bash, Read, Write) → pi-mono defaults
-5. **Session state** → pi-mono session persistence
-
-### Over-abstraction → Simplification
-1. **Separate packages for each integration** → Single `extensions/` directory
-2. **Mode-specific channel bindings** → Channel-agnostic with user preferences
-3. **Status reporter as separate service** → Extension listening to agent events
-4. **Tmux window per session** → Optional (pi-coding-agent uses it, Jarvis doesn't need it)
-
-## What to Add
-
-### New Capabilities
-1. **Persistent preferences** — Per-user memory and context
-2. **Exa web search** — Real-time information retrieval
-3. **Self-configuration** — Agent modifies its own settings
-4. **pi-coding-agent integration** — Specialized coding tasks
-5. **RPC mode** — Embed Jarvis in other apps
-6. **Smarter routing** — Context-aware triage (detect coding, search, task management)
-7. **Multi-model support** — On-the-fly provider switching (Anthropic → OpenAI fallback)
-
-## Architecture Patterns
-
-### Pattern 1: Channel Adapter Pattern
-**What:** Isolate protocol-specific code from business logic
-**When:** Supporting multiple messaging platforms (Telegram, Slack, WhatsApp)
-**Example:**
-```typescript
-interface Channel {
-  name: string;
-  initialize(config: {}, onMessage: (msg: Message) => Promise<void>): Promise<void>;
-  send(recipient: string, text: string): Promise<void>;
-  sendPlaceholder?(recipient: string, text: string): Promise<string | undefined>;
-  editMessage?(recipient: string, messageId: string, text: string): Promise<void>;
-  shutdown(): Promise<void>;
-}
+**Before v2.0:**
 ```
-**Why:** Channels are interchangeable, gateway doesn't know protocol details
-
-### Pattern 2: Triage + Delegation
-**What:** Cheap model decides whether to handle or delegate to expensive model
-**When:** Cost-sensitive applications with mixed simple/complex requests
-**Example:**
-```typescript
-const triageResponse = await llm.chat({ model: haiku, prompt: TRIAGE });
-if (triageResponse.includes("DELEGATE:")) {
-  return delegateToSmartAgent(task, onProgress);
-} else {
-  return { text: triageResponse };
-}
+User message → Gateway → AgentOrchestrator → Claude Code SDK → Response
+                                ↓
+                         SessionManager (JSONL in ~/.jarvis/sessions/)
 ```
-**Why:** 90% of requests are simple (greetings, status checks), save costs
 
-### Pattern 3: Event-Driven Progress
-**What:** Agent emits events for each step (thinking, tool call, result)
-**When:** Long-running tasks need progress updates to channels
-**Example:**
-```typescript
-agent.subscribe((event) => {
-  if (event.type === "text_delta") {
-    channel.editMessage(messageId, event.textContent);
-  } else if (event.type === "toolcall_end") {
-    channel.editMessage(messageId, `Using tool: ${event.toolcall.name}...`);
-  }
-});
+**After v2.0:**
 ```
-**Why:** Users expect real-time feedback, Telegram supports message edits
-
-### Pattern 4: Tool Registry
-**What:** Central registry of capabilities available to LLM
-**When:** Multiple integrations (Gmail, Notion, Linear) need to be callable
-**Example:**
-```typescript
-orchestrator.registerTool({
-  name: "gmail_search",
-  description: "Search emails in Gmail",
-  parameters: Type.Object({ query: Type.String() }),
-  execute: async (params) => gmailClient.search(params.query),
-});
+User message → Gateway → AgentOrchestrator
+                              ↓
+                         loadSoul() + searchMemories()
+                              ↓
+                         Claude Code SDK (with memory context)
+                              ↓
+                         Response + log to workspace/logs/
 ```
-**Why:** Integrations are pluggable, LLM discovers tools via registry
 
-### Pattern 5: Mode as Context
-**What:** Predefined profiles (personal/work/coding) shape behavior
-**When:** Same assistant needs different personalities/tools per context
-**Example:**
-```typescript
-modes: [
-  { mode: "personal", integrations: ["gmail"], channels: ["telegram"] },
-  { mode: "work", integrations: ["linear", "notion"], channels: ["slack"] },
-  { mode: "coding", tiers: { smart: "pi-coding-agent" }, channels: ["cli"] },
-]
+## Build Order Considerations
+
+### Phase 1: Identity System (SOUL.md)
+- **New:** `packages/core/src/identity/loader.ts`
+- **Modify:** `packages/core/src/agent.ts` (inject SOUL.md into system prompt)
+- **Workspace:** Create `~/.jarvis/workspace/SOUL.md`
+- **Dependencies:** None (pure file I/O)
+
+### Phase 2: Memory Persistence (JSONL logs)
+- **New:** `packages/core/src/memory/manager.ts`
+- **Modify:** `SessionManager` to write to workspace/logs/
+- **Workspace:** Create `~/.jarvis/workspace/logs/`
+- **Dependencies:** Phase 1 (shares workspace structure)
+
+### Phase 3: Semantic Search (Vector + BM25)
+- **New:** `packages/core/src/memory/search.ts`, `embeddings.ts`
+- **Modify:** `MemoryManager.search()`
+- **Workspace:** Create `~/.jarvis/workspace/.index/`
+- **Dependencies:** Phase 2 (needs logs to index)
+
+### Phase 4: Tool Registry + HTTP API
+- **New:** `packages/tool-api/` (entire package)
+- **Modify:** `packages/livekit-agent/src/agent.ts` (use HTTP API)
+- **Modify:** Gateway to route `/api/tools/*`
+- **Dependencies:** None (can build in parallel with memory phases)
+
+### Phase 5: Memory Compaction
+- **New:** `packages/core/src/memory/compaction.ts`
+- **Modify:** Cron scheduler to run nightly compaction
+- **Workspace:** Write to `~/.jarvis/workspace/MEMORY.md`
+- **Dependencies:** Phase 2, 3 (needs logs + vector index)
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 1 user (current) | Monolith is perfect. File-based memory, single VPS, no distributed concerns. |
+| 10-100 users | Separate tool-api as microservice (different users hit different tools). Keep memory per-user. Consider Redis for session state. |
+| 100+ users | Shard memory by user. Move vector index to dedicated service (Qdrant/Weaviate). Queue tool executions for rate limiting. |
+
+### Scaling Priorities
+
+1. **First bottleneck (20+ users):** Memory search latency. Fix: Move from in-memory BM25 to SQLite FTS5, use dedicated vector DB (LanceDB → Qdrant)
+2. **Second bottleneck (50+ users):** Tool API overwhelm. Fix: Add queue (BullMQ) for async tool execution, return job ID immediately, poll for results
+
+**Reality check:** jarvis is single-user. Scaling concerns are theoretical. Keep it simple.
+
+## Anti-Patterns
+
+### Anti-Pattern 1: RAG-Style Memory Retrieval Mid-Conversation
+
+**What people do:** Retrieve memories on every LLM turn, injecting them into context dynamically
+
+**Why it's wrong:**
+- Adds latency to every turn (embedding + search + context injection)
+- Context pollution — irrelevant memories degrade performance
+- Agent can't reason about "what it knows" if knowledge appears/disappears mid-conversation
+
+**Do this instead:** Search once at session start, inject top memories into initial system prompt. Agent has stable context for entire session.
+
+### Anti-Pattern 2: Storing Tools in Vector Database
+
+**What people do:** Embed tool descriptions, retrieve relevant tools based on user query
+
+**Why it's wrong:**
+- Tools are code, not documents — they don't benefit from semantic search
+- Tool count is small (<50), no need for retrieval
+- Increases latency for every tool call
+
+**Do this instead:** Expose all tools to LLM via function calling (MCP bridge). Let model choose based on descriptions in schema.
+
+### Anti-Pattern 3: Separate HTTP API Without MCP Bridge
+
+**What people do:** Force text agent (Claude Code SDK) to call HTTP tool API instead of using in-process MCP
+
+**Why it's wrong:**
+- Adds network overhead to in-process calls (10-50ms per tool use)
+- Complicates local development (need tool server running)
+- Defeats Claude Code SDK's MCP integration strengths
+
+**Do this instead:** Dual-path approach — MCP bridge for text agent (in-process, low latency), HTTP API for external clients (voice, iOS, web)
+
+### Anti-Pattern 4: Bloated SOUL.md
+
+**What people do:** Dump everything into SOUL.md — personality, operational instructions, tool permissions, example conversations
+
+**Why it's wrong:**
+- Consumes massive context window (GPT-4 uses ~2k tokens for bloated souls)
+- Conflicting directives (personality says "be concise", examples show verbose responses)
+- Hard to maintain (every change requires testing entire agent behavior)
+
+**Do this instead:**
+- SOUL.md: Identity only (who you are, personality, values, boundaries)
+- System prompt: Operational instructions (how to use tools, output format)
+- Preferences: User-specific behavioral rules
+- Keep SOUL.md under 500 words
+
+## Technology Recommendations
+
+### Memory Storage
+
+**Vector Database:**
+- **Best for jarvis:** LanceDB (embedded, serverless, runs in-process)
+- **Alternative:** pgvector (if already using Postgres)
+- **Avoid:** Pinecone/Weaviate (overkill for single-user, requires external service)
+
+**Rationale:** LanceDB runs inside Node.js process, no separate server. Perfect for single-user VPS deployment.
+
+**BM25 Index:**
+- **Best for jarvis:** SQLite FTS5 (built into SQLite, battle-tested)
+- **Alternative:** In-memory BM25 implementation (faster, no persistence)
+
+**Rationale:** SQLite already on VPS, FTS5 extension available, handles ~10k documents easily.
+
+### Embedding Model
+
+**Recommended:** `nomic-embed-text-v2` via Ollama (local deployment, multilingual, 768-dim)
+
+**Alternative:** OpenAI `text-embedding-3-small` (API-based, 1536-dim, costs $0.02/1M tokens)
+
+**Rationale:** Ollama runs on same VPS, no external API calls, privacy-preserving, free. OpenAI fallback if VPS resources constrained.
+
+**Deployment:**
+```bash
+# On srv1312265
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull nomic-embed-text
 ```
-**Why:** Users want different behavior for work vs personal, not separate bots
 
-## Anti-Patterns to Avoid
+### Tool API Framework
 
-### Anti-Pattern 1: Forking pi-mono
-**What:** Copying pi-mono packages into monorepo and modifying internals
-**Why bad:** Lose upstream updates, increase maintenance burden
-**Instead:** Use pi-mono as dependencies, extend via Extension system
+**Recommended:** Fastify (fast, TypeScript-first, low overhead)
 
-### Anti-Pattern 2: Over-packaging
-**What:** Separate npm package for each small integration (linear, notion, gmail)
-**Why bad:** Cognitive overhead, harder to share code, version coordination
-**Instead:** Single `extensions/` directory with shared utilities
+**Alternative:** Express (more familiar, larger ecosystem)
 
-### Anti-Pattern 3: Synchronous Tool Execution
-**What:** Blocking agent loop while tool executes
-**Why bad:** Long-running tools (API calls) freeze progress updates
-**Instead:** Use pi-mono's async tool execution with event streaming
-
-### Anti-Pattern 4: Stateless Sessions
-**What:** Treating each message as independent request
-**Why bad:** No memory of past interactions, can't reference previous context
-**Instead:** Use pi-mono's session persistence (JSONL log) with branching
-
-### Anti-Pattern 5: Hard-coded Model IDs
-**What:** Directly referencing model strings in code
-**Why bad:** Model versions change, providers deprecate models
-**Instead:** Store in config files, allow runtime override via preferences
-
-## Build Order Dependencies
-
-### Foundation (Weeks 1-2)
-1. **Phase 1: Replace LLM Client** — No dependencies
-2. **Phase 2: Replace Agent Loop** — Depends on Phase 1
-
-### Core Features (Weeks 3-4)
-3. **Phase 3: Standardize Tools** — Depends on Phase 2
-4. **Phase 4: Add Persistent Preferences** — Depends on Phase 3
-
-### Advanced Features (Weeks 5-6)
-5. **Phase 5: Integrate pi-coding-agent** — Depends on Phase 2
-6. **Phase 6: Add Self-Configuration** — Depends on Phase 4
-
-### Parallel Work
-- **Channels** can be refactored independently (no dependencies)
-- **Integrations** can be converted to Extensions during Phase 3
-- **Scheduler** can be updated once agent loop is stable (after Phase 2)
-- **Status Reporter** can be converted to Extension during Phase 3
-
-## Scalability Considerations
-
-| Concern | At 1 User | At 10 Users | At 100 Users |
-|---------|-----------|-------------|--------------|
-| **LLM Costs** | Triage saves 70% | Triage + caching saves 80% | Add user quotas, rate limits |
-| **State Storage** | JSON files in `~/.jarvis/` | Same (1 file per user) | Migrate to SQLite or Redis |
-| **Message Queue** | In-memory | In-memory | Redis queue with workers |
-| **Session Count** | 1-2 concurrent | 5-10 concurrent | Pool of agent processes |
-| **Integration Rate Limits** | No issues | Gmail/Linear quotas matter | Need backoff, retries, user auth |
-
-## Key Design Decisions
-
-### Decision 1: Keep Gateway, Use pi-mono for Agent
-**Rationale:** Gateway handles domain-specific routing (channels, modes, scheduling). pi-mono excels at agent loop and tool execution. Combining both gives best of both worlds.
-
-### Decision 2: Triage Before pi-mono Agent
-**Rationale:** Cheap model triage saves costs (70-90% of requests are simple). pi-mono agent is expensive (Sonnet/Opus). Triage layer filters before delegation.
-
-### Decision 3: Extensions Over Packages
-**Rationale:** Current architecture has too many packages (7+). Extensions are simpler, hot-reloadable, and aligned with pi-mono's design.
-
-### Decision 4: Per-User Preferences, Not Per-Mode
-**Rationale:** Modes are coarse-grained (personal/work). Users need fine-grained control (notification preferences, memory, custom tools). Preferences are richer.
-
-### Decision 5: JSON for Preferences, JSONL for Sessions
-**Rationale:** Preferences are read-heavy, small (JSON is perfect). Sessions are append-heavy, large (JSONL is append-only, compactable).
+**Rationale:** Fastify has built-in schema validation (JSON Schema), faster than Express, better for API-only services. No SSR needs = no Express benefits.
 
 ## Sources
 
-- [pi-mono GitHub Repository](https://github.com/badlogic/pi-mono)
-- [pi-mono Package Architecture](https://deepwiki.com/badlogic/pi-mono/1.1-package-architecture)
-- [pi-mono Agent Loop Documentation](https://deepwiki.com/badlogic/pi-mono/3.1-agent-and-transport-layer)
-- [pi-mono Extension System](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md)
-- [@mariozechner/pi-ai npm package](https://www.npmjs.com/package/@mariozechner/pi-agent-core)
-- [@mariozechner/pi-agent-core npm package](https://www.npmjs.com/package/@mariozechner/pi-agent-core)
-- [@mariozechner/pi-coding-agent npm package](https://www.npmjs.com/package/@mariozechner/pi-coding-agent)
-- [What I learned building an opinionated and minimal coding agent](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/)
-- [Pi: The Minimal Agent Within OpenClaw](https://lucumr.pocoo.org/2026/1/31/pi/)
+- [AI Agent Memory: Build Stateful AI Systems That Remember](https://redis.io/blog/ai-agent-memory-stateful-systems/)
+- [Build persistent memory for agentic AI applications with Mem0](https://aws.amazon.com/blogs/database/build-persistent-memory-for-agentic-ai-applications-with-mem0-open-source-amazon-elasticache-for-valkey-and-amazon-neptune-analytics/)
+- [Graph Memory for AI Agents](https://mem0.ai/blog/graph-memory-solutions-ai-agents)
+- [Design Patterns for Long-Term Memory in LLM-Powered Architectures](https://serokell.io/blog/design-patterns-for-long-term-memory-in-llm-powered-architectures)
+- [RAG is not Agent Memory](https://www.letta.com/blog/rag-vs-agent-memory)
+- [MCP Gateways: A Developer's Guide](https://composio.dev/blog/mcp-gateways-guide)
+- [APIs for AI Agents: The 5 Integration Patterns](https://composio.dev/blog/apis-ai-agents-integration-patterns)
+- [SOUL.md: The Simplest Way to Create an AI Agent](https://www.crewclaw.com/blog/soul-md-create-ai-agent)
+- [OpenClaw and the Programmable Soul](https://www.barnacle.ai/blog/2026-02-02-openclaw-and-the-programmable-soul)
+- [The Best Open-Source Embedding Models in 2026](https://www.bentoml.com/blog/a-guide-to-open-source-embedding-models)
+- [Run Embedding Models for Semantic Search](https://www.docker.com/blog/run-embedding-models-for-semantic-search/)
+
+---
+*Architecture research for: v2.0 Agent Architecture (Memory, Identity, HTTP Tool API)*
+*Researched: 2026-02-12*

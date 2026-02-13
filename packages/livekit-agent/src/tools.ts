@@ -1,5 +1,5 @@
 /**
- * Bridge Jarvis Integration tools → LiveKit Agent tools.
+ * Bridge Jarvis ToolDefinition[] → LiveKit Agent tools.
  *
  * Converts ToolDefinition (JSON Schema params) into llm.ToolContext
  * using llm.tool() from @livekit/agents.
@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { llm } from "@livekit/agents";
-import type { Integration, ToolDefinition } from "@jarvis/core";
+import type { ToolDefinition } from "@jarvis/core";
 
 /**
  * Convert a JSON Schema property to a Zod type.
@@ -87,61 +87,19 @@ function bridgeTool(
 }
 
 /**
- * Convert all tools from initialized integrations into an llm.ToolContext.
+ * Convert all ToolDefinitions into an llm.ToolContext.
  */
-export function bridgeIntegrationTools(
-  integrations: Integration[],
+export function bridgeTools(
+  tools: ToolDefinition[],
 ): llm.ToolContext {
   const ctx: llm.ToolContext = {};
 
-  for (const integration of integrations) {
-    for (const td of integration.tools) {
-      bridgeTool(ctx, td);
-      console.log(
-        `[livekit-agent] Bridged tool: ${td.name} (from ${integration.name})`,
-      );
-    }
+  for (const td of tools) {
+    bridgeTool(ctx, td);
+    console.log(
+      `[livekit-agent] Bridged tool: ${td.name}`,
+    );
   }
 
   return ctx;
-}
-
-/**
- * Build the Exa web search tool as an llm.FunctionTool.
- * Returns null if EXA_API_KEY is not set.
- */
-export function buildExaTool(): llm.FunctionTool<any> | null {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) return null;
-
-  return llm.tool({
-    description:
-      "Search the web using Exa. Use when the user asks about current events, facts, or anything benefiting from a web search.",
-    parameters: z.object({
-      query: z.string().describe("The search query"),
-      numResults: z
-        .number()
-        .optional()
-        .describe("Number of results (default 5, max 10)"),
-    }),
-    execute: async (params) => {
-      const { Exa } = await import("exa-js");
-      const exa = new Exa(apiKey);
-      const res = await exa.searchAndContents(params.query, {
-        numResults: Math.min(params.numResults || 5, 10),
-        useAutoprompt: true,
-        text: true,
-      });
-
-      if (!res.results?.length) return "No results found.";
-
-      const results = res.results.map((r: any) => ({
-        title: r.title,
-        url: r.url,
-        text: r.text ? r.text.slice(0, 500) : undefined,
-      }));
-
-      return JSON.stringify(results, null, 2);
-    },
-  });
 }
