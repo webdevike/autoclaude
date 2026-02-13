@@ -432,3 +432,7 @@ function formatToolName(raw: string): string {
   // Final fallback: clean up and return
   return `Using ${raw.replace(/[_-]/g, " ")}...`;
 }
+
+// HTTP API exports
+export { startHttpApi } from "./http-api.js";
+export type { HttpApiConfig } from "./http-api.js";
