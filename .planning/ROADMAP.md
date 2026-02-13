@@ -95,8 +95,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Data channel listener + HTTP API routing + response forwarding (user_text handler, gateway POST, agent_text_response + function_tools_executed messages)
-- [ ] 07-02-PLAN.md — Gateway health check + resilient connectivity (startup health verification, retry logic, graceful degradation)
+- [x] 07-01-PLAN.md — Data channel listener + HTTP API routing + response forwarding (user_text handler, gateway POST, agent_text_response + function_tools_executed messages)
+- [x] 07-02-PLAN.md — Gateway health check + resilient connectivity (startup health verification, retry logic, graceful degradation)
 
 #### Phase 8: Voice Tool Forwarding
 **Goal**: Voice tool results forwarded to iOS as structured JSON for tool cards
@@ -124,5 +124,5 @@ Phases execute in numeric order: 6 → 7 → 8
 | 4. Cron Execution | v1.0 | 2/2 | Complete | 2026-02-06 |
 | 5. Workspace & Identity Foundation | v2.0 | 2/2 | Complete | 2026-02-12 |
 | 6. HTTP API Foundation | v2.0 | 2/2 | Complete | 2026-02-13 |
-| 7. Text Message Routing | v2.0 | 0/2 | Not started | - |
+| 7. Text Message Routing | v2.0 | 2/2 | Complete | 2026-02-13 |
 | 8. Voice Tool Forwarding | v2.0 | 0/1 | Not started | - |
