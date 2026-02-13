@@ -16,9 +16,8 @@ import {
   WorkspaceGit,
 } from "@jarvis/core";
 import type { ModeConfig } from "@jarvis/core";
-import { Gateway } from "@jarvis/gateway";
+import { Gateway, startHttpApi } from "@jarvis/gateway";
 import { TelegramChannel } from "@jarvis/channel-telegram";
-import { VoiceWebChannel } from "@jarvis/channel-voice-web";
 import { LinearIntegration } from "@jarvis/integration-linear";
 import { GmailIntegration } from "@jarvis/integration-gmail";
 import { Scheduler } from "@jarvis/scheduler";
@@ -103,20 +102,6 @@ async function main(): Promise<void> {
     console.warn("[channels] TELEGRAM_BOT_TOKEN not set, Telegram disabled.");
   }
 
-  // --- Voice Web channel (OpenAI Realtime) ---
-  if (process.env.OPENAI_API_KEY) {
-    const activeModeConfig = modes.find(m => m.mode === defaultMode) ?? modes[0];
-    gateway.registerChannel(new VoiceWebChannel({
-      port: parseInt(process.env.VOICE_WEB_PORT ?? "3000", 10),
-      openaiApiKey: process.env.OPENAI_API_KEY,
-      systemPrompt: activeModeConfig.systemPrompt,
-      voice: process.env.VOICE_WEB_VOICE ?? "ash",
-      model: process.env.VOICE_WEB_MODEL ?? "gpt-4o-realtime-preview",
-    }));
-  } else {
-    console.warn("[channels] OPENAI_API_KEY not set, Voice Web disabled.");
-  }
-
   // --- Start scheduler ---
   const scheduler = new Scheduler(orchestrator);
   for (const mode of modes) {
@@ -158,6 +143,9 @@ async function main(): Promise<void> {
 
   // --- Start gateway ---
   await gateway.start();
+
+  // --- Start HTTP API for LiveKit agent communication ---
+  await startHttpApi({ orchestrator });
 
   // --- Set up autonomous runner ---
   const runner = new AutonomousRunner({
