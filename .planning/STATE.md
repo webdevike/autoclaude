@@ -5,16 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-12)
 
 **Core value:** A unified AI assistant that remembers context across sessions and surfaces
-**Current focus:** Phase 5 complete, ready for Phase 6
+**Current focus:** LiveKit gateway unification — defining requirements
 
 ## Current Position
 
-Phase: 5 of 9 (Workspace & Identity Foundation) — COMPLETE
-Plan: All plans done, verified
-Status: Complete
-Last activity: 2026-02-12 - Phase 5 verified and complete
-
-Progress: [█████░░░░░] 52% (13/25 plans total, 11 from v1.0 complete, 2 from v2.0)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-13 — v2.0 scope pivoted to LiveKit gateway unification (phases 6-9 replaced)
 
 ## Performance Metrics
 
@@ -84,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-12 - Phase 5 execution complete
-Stopped at: Phase 5 verified and complete. Ready for Phase 6.
+Last session: 2026-02-13 - v2.0 scope pivot, defining requirements
+Stopped at: New milestone initialization
 Resume file: None

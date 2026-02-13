@@ -8,16 +8,16 @@ A self-hosted personal AI assistant with multiple surfaces — Telegram (text), 
 
 A unified AI assistant that remembers context across sessions and surfaces — whether I'm typing on Telegram, talking via the iOS app, or using the CLI — with the same tools and identity everywhere.
 
-## Current Milestone: v2.0 Agent Architecture
+## Current Milestone: v2.0 Unify LiveKit Agent Through Gateway
 
-**Goal:** Transform jarvis from a Telegram-centric agent into an OpenClaw-inspired multi-surface assistant with persistent searchable memory, a soul/identity system, and a shared HTTP tool API.
+**Goal:** Route iOS text messages through the gateway orchestrator so iOS gets the same tools, SOUL.md, session continuity, and modes as Telegram. Forward voice tool results to iOS as structured JSON for tool cards.
 
 **Target features:**
-- SOUL.md identity file loaded every session (personality, boundaries, continuity)
-- Persistent memory system (MEMORY.md curated long-term + daily logs + pre-compaction flush)
-- Semantic memory search (vector embeddings + BM25 hybrid search)
-- Canonical tool registry with HTTP invoke API (any surface calls the same tools)
-- Workspace structure following OpenClaw conventions
+- Internal HTTP API on gateway process (localhost:3457) exposing orchestrator to LiveKit agent
+- LiveKit agent routes iOS text messages through gateway orchestrator (same path as Telegram)
+- Voice tool results forwarded to iOS via data channel as structured JSON
+- iOS gets SOUL.md personality, session continuity, all orchestrator tools, and mode switching for text path
+- Voice path unchanged (OpenAI Realtime with bridged integration tools)
 
 ## Current State (v1.0 shipped, cron done)
 
@@ -52,11 +52,10 @@ A unified AI assistant that remembers context across sessions and surfaces — w
 
 ### Active
 
-- [ ] SOUL.md identity system loaded into every agent session
-- [ ] Persistent memory (MEMORY.md + daily logs + pre-compaction flush)
-- [ ] Semantic memory search (embeddings + BM25 hybrid)
-- [ ] Canonical tool registry with HTTP invoke API
-- [ ] Workspace structure (~/.jarvis/workspace/ with SOUL.md, MEMORY.md, etc.)
+- [ ] Internal HTTP API exposing orchestrator on localhost:3457
+- [ ] LiveKit agent routes iOS text messages through gateway orchestrator
+- [ ] Voice tool results forwarded to iOS as structured JSON via data channel
+- [ ] Text path provides SOUL.md, session continuity, all tools, and mode switching
 
 ### Out of Scope
 
@@ -98,8 +97,8 @@ A unified AI assistant that remembers context across sessions and surfaces — w
 | Extension API for integrations | Lifecycle management, hot-reload potential | ✓ Good — clean separation |
 | Multiple surfaces (Telegram + LiveKit + iOS) | Access from any device, any modality | ✓ Good — works, needs tool unification |
 | Gmail personal only | Can't OAuth work email | — Accepted limitation |
-| OpenClaw-style workspace + memory | Proven pattern, file-based, semantic search, identity persistence | — v2.0 |
-| HTTP tool invoke API | Single tool endpoint for all surfaces | — v2.0 |
+| OpenClaw-style workspace + memory | Proven pattern, file-based, semantic search, identity persistence | ✓ Good — workspace/SOUL.md shipped in Phase 5, memory deferred |
+| Internal HTTP API for LK→gateway | Lightweight Hono server, localhost only, reuses orchestrator | — v2.0 |
 
 ---
-*Last updated: 2026-02-12 after v2.0 milestone start*
+*Last updated: 2026-02-13 after v2.0 scope pivot to LiveKit gateway unification*
