@@ -79,8 +79,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — HTTP API module (Hono server, /api/message endpoint, orchestrator routing)
-- [ ] 06-02-PLAN.md — CLI integration (export startHttpApi, wire into startup after gateway.start())
+- [x] 06-01-PLAN.md — HTTP API module (Hono server, /api/message endpoint, orchestrator routing)
+- [x] 06-02-PLAN.md — CLI integration (export startHttpApi, wire into startup after gateway.start())
 
 #### Phase 7: Text Message Routing
 **Goal**: LiveKit agent routes iOS text messages through gateway HTTP API
@@ -123,6 +123,6 @@ Phases execute in numeric order: 6 → 7 → 8
 | 3. Preferences & Configuration | v1.0 | 3/3 | Complete | 2026-02-06 |
 | 4. Cron Execution | v1.0 | 2/2 | Complete | 2026-02-06 |
 | 5. Workspace & Identity Foundation | v2.0 | 2/2 | Complete | 2026-02-12 |
-| 6. HTTP API Foundation | v2.0 | 0/2 | Not started | - |
+| 6. HTTP API Foundation | v2.0 | 2/2 | Complete | 2026-02-13 |
 | 7. Text Message Routing | v2.0 | 0/2 | Not started | - |
 | 8. Voice Tool Forwarding | v2.0 | 0/1 | Not started | - |
