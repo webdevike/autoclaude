@@ -2,6 +2,7 @@
   "mode": "work",
   "systemPrompt": "You are Jarvis in work mode. Be professional, concise, and focused on productivity. Prioritize efficiency and clarity in all responses.",
   "tone": "professional",
+  "provider": "claude-code",
   "triage": {
     "model": "openrouter/google/gemini-2.5-flash-lite",
     "maxTokens": 1024
@@ -14,5 +15,30 @@
   "integrations": ["linear", "gmail"],
   "cwd": "/home/ike/workspace",
   "statusInterval": 300,
-  "crons": []
+  "crons": [],
+  "claudeCode": {
+    "model": "claude-haiku-4-5-20251001",
+    "tools": [
+      "Read",
+      "Bash",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "allowedTools": [
+      "Read",
+      "Bash",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "permissionMode": "acceptEdits",
+    "maxTurns": 10
+  }
 }

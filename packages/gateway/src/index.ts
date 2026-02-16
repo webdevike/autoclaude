@@ -65,14 +65,19 @@ export class Gateway {
     const startPromises: Promise<void>[] = [];
 
     for (const [name, channel] of this.channels) {
-      const modeConfig = this.config.modes.find((m) =>
-        m.channels.includes(name),
+      // Find the mode that exclusively owns this channel (mode-specific channel name like "telegram-work")
+      const exclusiveMode = this.config.modes.find((m) =>
+        m.channels.includes(name) && name !== "telegram",
       );
-      const mode = modeConfig?.mode ?? this.config.defaultMode;
+
+      // If a channel is mode-specific (e.g. "telegram-personal"), lock it to that mode.
+      // Otherwise (shared "telegram" channel), pass empty string so the orchestrator
+      // uses its activeMode — this makes /mode switching work correctly.
+      const fixedMode = exclusiveMode?.mode ?? "";
 
       startPromises.push(
         channel.initialize({}, async (msg: Message) => {
-          await this.handleIncoming(msg, channel, mode);
+          await this.handleIncoming(msg, channel, fixedMode);
         }),
       );
     }
@@ -87,13 +92,14 @@ export class Gateway {
   private async handleIncoming(
     msg: Message,
     channel: Channel,
-    defaultMode: string,
+    fixedMode: string,
   ): Promise<void> {
-    // Assign mode based on channel or use message's mode
+    // Assign mode: use fixed mode for mode-specific channels,
+    // otherwise leave empty so orchestrator uses its activeMode (supports /mode switching)
     const message: Message = {
       ...msg,
       id: msg.id || randomUUID(),
-      mode: msg.mode || defaultMode,
+      mode: msg.mode || fixedMode,
       timestamp: msg.timestamp || Date.now(),
     };
 
@@ -115,7 +121,7 @@ export class Gateway {
 
     // Handle /auto commands
     if (message.text.startsWith("/auto")) {
-      await this.handleAutoCommand(message, channel, defaultMode);
+      await this.handleAutoCommand(message, channel, fixedMode);
       return;
     }
 
@@ -244,7 +250,7 @@ export class Gateway {
 
 
   /** Handle /auto commands */
-  private async handleAutoCommand(msg: Message, channel: Channel, defaultMode: string): Promise<void> {
+  private async handleAutoCommand(msg: Message, channel: Channel, fixedMode: string): Promise<void> {
     const runner = this.orchestrator.getAutonomousRunner?.();
     if (!runner) {
       await channel.send(msg.sender, "Autonomous runner not available.");
@@ -278,7 +284,7 @@ export class Gateway {
     }
 
     // Get mode config for cwd fallback
-    const modeConfig = this.config.modes.find(m => m.mode === (msg.mode || defaultMode)) ?? this.config.modes[0];
+    const modeConfig = this.config.modes.find(m => m.mode === (msg.mode || fixedMode || this.config.defaultMode)) ?? this.config.modes[0];
     const taskCwd = cwd ?? modeConfig?.cwd ?? process.cwd();
     const chatId = (msg.metadata?.chatId as string) ?? msg.channelMessageId ?? msg.sender;
 
@@ -287,7 +293,7 @@ export class Gateway {
       sender: msg.sender,
       chatId,
       channelName: channel.name,
-      mode: msg.mode || defaultMode,
+      mode: msg.mode || fixedMode || this.config.defaultMode,
       cwd: taskCwd,
     });
 

@@ -29,7 +29,7 @@ interface TelegramResponse<T> {
  * roll our own with a simple setInterval loop.
  */
 export class TelegramChannel implements Channel {
-  name = "telegram";
+  name: string;
   private token: string;
   private allowedUsers: Set<string> = new Set();
   private running = false;
@@ -38,7 +38,8 @@ export class TelegramChannel implements Channel {
   private processedUpdates = new Set<number>(); // Track processed update IDs to prevent duplicates
   private callbackQueryHandler?: (query: CallbackQuery) => Promise<void>;
 
-  constructor(token: string, allowedUsers?: string[]) {
+  constructor(token: string, allowedUsers?: string[], channelName?: string) {
+    this.name = channelName ?? "telegram";
     this.token = token;
     if (allowedUsers?.length) {
       this.allowedUsers = new Set(allowedUsers);

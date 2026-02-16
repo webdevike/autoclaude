@@ -76,14 +76,44 @@ async function main(): Promise<void> {
     defaultMode,
   });
 
-  // --- Register channels ---
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    const telegramAllowed = process.env.TELEGRAM_ALLOWED_USERS?.split(",") ?? [];
+  // --- Register Telegram channels ---
+  // Supports per-mode tokens: TELEGRAM_BOT_TOKEN_PERSONAL, TELEGRAM_BOT_TOKEN_WORK
+  // Falls back to shared TELEGRAM_BOT_TOKEN for backward compatibility
+  const telegramAllowed = process.env.TELEGRAM_ALLOWED_USERS?.split(",") ?? [];
+  const registeredTokens = new Set<string>();
+
+  for (const mode of modes) {
+    if (!mode.channels.some(ch => ch === "telegram" || ch.startsWith("telegram-"))) continue;
+
+    const modeTokenKey = `TELEGRAM_BOT_TOKEN_${mode.mode.toUpperCase()}`;
+    const token = process.env[modeTokenKey] || process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!token) {
+      console.warn(`[channels] No Telegram token for mode '${mode.mode}' (checked ${modeTokenKey} and TELEGRAM_BOT_TOKEN), skipping.`);
+      continue;
+    }
+
+    // Don't register the same token twice (shared token = single bot)
+    if (registeredTokens.has(token)) continue;
+    registeredTokens.add(token);
+
+    // Use mode-specific channel name when a dedicated token is provided
+    const hasDedicatedToken = !!process.env[modeTokenKey];
+    const channelName = hasDedicatedToken ? `telegram-${mode.mode}` : "telegram";
+
+    // Update mode config to reference the correct channel name
+    if (hasDedicatedToken) {
+      mode.channels = mode.channels.map(ch => ch === "telegram" ? channelName : ch);
+    }
+
     gateway.registerChannel(
-      new TelegramChannel(process.env.TELEGRAM_BOT_TOKEN, telegramAllowed),
+      new TelegramChannel(token, telegramAllowed, channelName),
     );
-  } else {
-    console.warn("[channels] TELEGRAM_BOT_TOKEN not set, Telegram disabled.");
+    console.log(`[channels] Registered Telegram channel '${channelName}' for mode '${mode.mode}'`);
+  }
+
+  if (registeredTokens.size === 0) {
+    console.warn("[channels] No TELEGRAM_BOT_TOKEN set, Telegram disabled.");
   }
 
   // --- Start scheduler ---
@@ -104,9 +134,15 @@ async function main(): Promise<void> {
   scheduler.setSendReply((channel, chatId, text) => gateway.sendToChannel(channel, chatId, text));
 
   // Set default reply destination from allowed Telegram users (first user = owner)
+  // Use whichever telegram channel name was registered (shared or per-mode)
   const defaultChatId = process.env.TELEGRAM_ALLOWED_USERS?.split(",")[0]?.trim();
   if (defaultChatId) {
-    scheduler.setDefaultReplyTo("telegram", defaultChatId);
+    const defaultTelegramChannel = gateway.getChannel("telegram")
+      ? "telegram"
+      : gateway.getChannel(`telegram-${defaultMode}`)
+        ? `telegram-${defaultMode}`
+        : "telegram";
+    scheduler.setDefaultReplyTo(defaultTelegramChannel, defaultChatId);
   }
 
   // Register scheduler tool so the agent can manage crons
@@ -140,12 +176,15 @@ async function main(): Promise<void> {
   orchestrator.setAutonomousRunner(runner);
 
   // Wire Telegram callback queries to the autonomous runner
-  const telegramChannel = gateway.getChannel("telegram");
-  if (telegramChannel?.onCallbackQuery) {
-    telegramChannel.onCallbackQuery(async (query) => {
-      await runner.handleCallbackQuery(query);
-    });
-    console.log("[startup] Telegram callback queries wired to autonomous runner.");
+  // Check all possible telegram channel names (shared "telegram" or per-mode "telegram-*")
+  for (const channelName of ["telegram", ...modes.map(m => `telegram-${m.mode}`)]) {
+    const ch = gateway.getChannel(channelName);
+    if (ch?.onCallbackQuery) {
+      ch.onCallbackQuery(async (query) => {
+        await runner.handleCallbackQuery(query);
+      });
+      console.log(`[startup] Callback queries wired for channel '${channelName}'.`);
+    }
   }
 
   console.log(`\nJarvis is running in "${defaultMode}" mode.`);

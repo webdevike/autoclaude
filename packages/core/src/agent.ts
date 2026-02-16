@@ -515,7 +515,7 @@ export class AgentOrchestrator {
     msg: Message,
     onProgress?: (event: StreamProgressEvent) => void,
   ): Promise<AgentResponse> {
-    const modeConfig = this.modes.get(msg.mode ?? this.activeMode);
+    const modeConfig = this.modes.get(msg.mode || this.activeMode);
     if (!modeConfig) {
       return { text: `Unknown mode: ${msg.mode}. Available: ${Array.from(this.modes.keys()).join(", ")}` };
     }
